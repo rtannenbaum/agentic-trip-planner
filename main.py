@@ -10,6 +10,12 @@ from trip_planner.agent import root_agent
 load_dotenv()
 
 async def main():
+  """Main entry point for the trip planner agent CLI.
+
+  Initializes the session service, configures the ADK runner with the root
+  agent, and enters a REPL loop to process user messages and handle
+  Human-In-The-Loop (HITL) booking confirmations.
+  """
   # Ensure API key is set
   if not os.environ.get("GOOGLE_API_KEY") and not os.environ.get("GOOGLE_CLOUD_PROJECT"):
     print("Warning: GOOGLE_API_KEY or GOOGLE_CLOUD_PROJECT not set.")
