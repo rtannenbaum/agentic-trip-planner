@@ -85,8 +85,10 @@ def load_bookings():
 
   Returns:
       A dictionary containing the bookings data, structured as
-      {"hotels": [...], "activities": [...]}. Returns default empty lists
-      if the file doesn't exist or is corrupted.
+      {"hotels": [...], "activities": [...]}.
+
+  Raises:
+      RuntimeError: If the database file exists but is corrupted or unreadable.
   """
   if os.path.exists(BOOKINGS_FILE):
     try:
@@ -94,6 +96,11 @@ def load_bookings():
         return json.load(f)
     except Exception as e:
       logger.error(f"Error loading bookings: {e}")
+      raise RuntimeError(
+          f"The bookings database file exists but could not be parsed (Error: {e}). "
+          "To prevent further data loss, the server has blocked writes. "
+          "Please inform the user that the database is corrupted and check the server logs."
+      )
   return {"hotels": [], "activities": []}
 
 BOOKINGS = load_bookings()
@@ -133,10 +140,27 @@ async def do_book_hotel(args: dict) -> dict:
   
   # Semantic date validation
   try:
-    datetime.strptime(check_in, "%Y-%m-%d")
-    datetime.strptime(check_out, "%Y-%m-%d")
+    in_date = datetime.strptime(check_in, "%Y-%m-%d")
   except ValueError:
-    raise ValueError("Invalid date values. Must be real calendar dates.")
+    raise ValueError(
+        f"Invalid check_in date format or value: '{check_in}'. "
+        "Dates must be real calendar dates in 'YYYY-MM-DD' format (e.g., '2026-10-12'). "
+        "Please ask the user to provide a valid calendar check-in date."
+    )
+  try:
+    out_date = datetime.strptime(check_out, "%Y-%m-%d")
+  except ValueError:
+    raise ValueError(
+        f"Invalid check_out date format or value: '{check_out}'. "
+        "Dates must be real calendar dates in 'YYYY-MM-DD' format (e.g., '2026-10-13'). "
+        "Please ask the user to provide a valid calendar check-out date."
+    )
+
+  if out_date <= in_date:
+    raise ValueError(
+        f"Invalid date range: check_out date '{check_out}' must be strictly after check_in date '{check_in}'. "
+        "Please ask the user to adjust their checkout date so it falls after the check-in date."
+    )
     
   logger.info(f"Booking hotel: {hotel_name} from {check_in} to {check_out}")
   booking = {
@@ -176,7 +200,11 @@ async def do_book_activity(args: dict) -> dict:
   try:
     datetime.strptime(date, "%Y-%m-%d")
   except ValueError:
-    raise ValueError("Invalid date value. Must be a real calendar date.")
+    raise ValueError(
+        f"Invalid date format or value: '{date}' for activity '{activity_name}'. "
+        "The date must be a real calendar date in 'YYYY-MM-DD' format (e.g., '2026-10-12'). "
+        "Please ask the user to clarify or correct the date before retrying the booking."
+    )
     
   logger.info(f"Booking activity: {activity_name} on {date}")
   booking = {
