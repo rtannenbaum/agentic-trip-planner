@@ -85,9 +85,10 @@ python main.py
 
 ```mermaid
 graph TD
-    START([User Input]) --> route_input[Route Input]
-    route_input -- "plan_trip" --> trip_generator[Generate Plan]
-    route_input -- "query_bookings" --> booking_query_agent[booking_query_agent Node with MCP Tools]
+    START([User Input]) --> router_agent[Router Agent]
+    router_agent --> execute_route[Execute Route]
+    execute_route -- "plan_trip" --> trip_generator[Generate Plan]
+    execute_route -- "query_bookings" --> booking_query_agent[booking_query_agent Node with MCP Tools]
     trip_generator --> present_plan[Present Plan]
     present_plan --> booking_preparer[Extract Bookings]
     booking_preparer --> confirm_booking{confirm_booking Node}

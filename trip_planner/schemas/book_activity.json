@@ -1,0 +1,53 @@
+{
+  "name": "book_activity",
+  "description": "Simulates booking an activity.",
+  "inputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+      "activity_name": {
+        "type": "string",
+        "description": "Name of the activity to book."
+      },
+      "date": {
+        "type": "string",
+        "description": "Date of the activity (YYYY-MM-DD).",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+      }
+    },
+    "required": ["activity_name", "date"],
+    "additionalProperties": false
+  },
+  "outputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+      "status": {
+        "type": "string",
+        "enum": ["success", "error"]
+      },
+      "message": {
+        "type": "string",
+        "description": "User-facing confirmation message."
+      },
+      "booking": {
+        "type": "object",
+        "properties": {
+          "activity_name": {"type": "string"},
+          "date": {"type": "string"},
+          "status": {"type": "string"}
+        },
+        "required": ["activity_name", "date", "status"]
+      }
+    },
+    "required": ["status", "message", "booking"],
+    "additionalProperties": false
+  },
+  "annotations": {
+    "title": "Book Activity",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": true
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "name": "list_bookings",
+  "description": "Lists all current bookings.",
+  "inputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false
+  },
+  "outputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+      "hotels": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "hotel_name": {"type": "string"},
+            "check_in": {"type": "string"},
+            "check_out": {"type": "string"},
+            "status": {"type": "string"}
+          },
+          "required": ["hotel_name", "check_in", "check_out", "status"]
+        }
+      },
+      "activities": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "activity_name": {"type": "string"},
+            "date": {"type": "string"},
+            "status": {"type": "string"}
+          },
+          "required": ["activity_name", "date", "status"]
+        }
+      }
+    },
+    "required": ["hotels", "activities"],
+    "additionalProperties": false
+  },
+  "annotations": {
+    "title": "List Bookings",
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+  }
+}
