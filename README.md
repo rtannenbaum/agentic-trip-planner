@@ -1,13 +1,13 @@
-# Agentic Trip Planner
+# Agentic Trip Planner (Generator-Critic Refinement Loop)
 
-A starter Python application using the Google Agent Development Kit (ADK) to build a Trip Planning Agent.
+A starter Python application using the Google Agent Development Kit (ADK) that implements a Trip Planning Refinement Loop using a Generator-Critic pattern.
 
 ## Project Structure
 
-*   `trip_planner/`: The core agent package. Contains the agent definition and local configuration.
-    *   `agent.py`: Defines the `trip_planner` agent instructions and model (`gemini-3.5-flash`).
+*   `trip_planner/`: The core agent package. Contains the agent definitions and workflow configuration.
+    *   `agent.py`: Defines the trip planner workflow, including the `trip_generator` agent, the `trip_critic` agent, and the refinement loop logic.
     *   `.env.example`: Template for environment variables (API keys) used by the ADK CLI.
-*   `main.py`: A local programmatic test harness to run the agent in the terminal using the ADK Runner.
+*   `main.py`: A local programmatic test harness to run the workflow in the terminal using the ADK Runner.
 *   `requirements.txt`: Python dependencies.
 *   `.env.example`: Root-level template for environment variables used by `main.py`.
 
