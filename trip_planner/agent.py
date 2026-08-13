@@ -9,13 +9,35 @@ from google.adk.workflow import node
 from mcp import StdioServerParameters
 from pydantic import BaseModel, Field
 
-# 1. Input Routing Node
-def route_input(node_input: str, ctx: Context):
-  """Route input to trip generator or booking query agent based on content."""
-  query = node_input.lower()
-  if "booking" in query and any(w in query for w in ["show", "list", "view", "see", "get", "what", "my"]):
-    return Event(route="query_bookings")
-  return Event(state={"trip_details": node_input}, route="plan_trip")
+# 1. Router Schema and Agent
+class RouterOutput(BaseModel):
+  route: Literal["plan_trip", "query_bookings"] = Field(
+      ...,
+      description="The route to take. 'plan_trip' to plan a new trip or modify a plan. 'query_bookings' to view bookings, show summaries of booked days, or check booking status."
+  )
+  query: str = Field(..., description="Copy the user's input query here verbatim.")
+
+router_agent = Agent(
+    name="router_agent",
+    model="gemini-3.5-flash",
+    description="Routes user input to the correct flow.",
+    instruction=(
+        "Analyze the user's input and determine if they want to plan a new trip, "
+        "or if they are asking about existing/past bookings and itineraries.\n"
+        "Select 'plan_trip' if they want to plan a new trip (e.g. destinations, dates, preferences).\n"
+        "Select 'query_bookings' if they are asking to see their bookings, "
+        "show summaries of booked days (e.g. 'show day 2'), list booked activities, or check booking status.\n\n"
+        "You must also copy the user's input query verbatim into the 'query' field."
+    ),
+    output_schema=RouterOutput,
+    output_key="router_output",
+)
+
+def execute_route(router_output: RouterOutput):
+  """Route based on router_agent output, saving query to state if planning."""
+  if router_output.route == "plan_trip":
+    return Event(state={"trip_details": router_output.query}, route="plan_trip")
+  return Event(route="query_bookings")
 
 # 2. Trip Generator Agent
 trip_generator = Agent(
@@ -120,8 +142,9 @@ booking_query_agent = Agent(
 root_agent = Workflow(
     name="trip_planner_workflow",
     edges=[
-        ("START", route_input),
-        (route_input, {
+        ("START", router_agent),
+        (router_agent, execute_route),
+        (execute_route, {
             "plan_trip": trip_generator,
             "query_bookings": booking_query_agent
         }),
