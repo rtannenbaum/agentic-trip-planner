@@ -1,0 +1,59 @@
+{
+  "name": "book_hotel",
+  "description": "Simulates booking a hotel.",
+  "inputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+      "hotel_name": {
+        "type": "string",
+        "description": "Name of the hotel to book."
+      },
+      "check_in": {
+        "type": "string",
+        "description": "Check-in date (YYYY-MM-DD).",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+      },
+      "check_out": {
+        "type": "string",
+        "description": "Check-out date (YYYY-MM-DD).",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+      }
+    },
+    "required": ["hotel_name", "check_in", "check_out"],
+    "additionalProperties": false
+  },
+  "outputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+      "status": {
+        "type": "string",
+        "enum": ["success", "error"]
+      },
+      "message": {
+        "type": "string",
+        "description": "User-facing confirmation message."
+      },
+      "booking": {
+        "type": "object",
+        "properties": {
+          "hotel_name": {"type": "string"},
+          "check_in": {"type": "string"},
+          "check_out": {"type": "string"},
+          "status": {"type": "string"}
+        },
+        "required": ["hotel_name", "check_in", "check_out", "status"]
+      }
+    },
+    "required": ["status", "message", "booking"],
+    "additionalProperties": false
+  },
+  "annotations": {
+    "title": "Book Hotel",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": true
+  }
+}
