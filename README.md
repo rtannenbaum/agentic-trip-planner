@@ -1,13 +1,15 @@
-# Agentic Trip Planner (Generator-Critic Refinement Loop)
+# Agentic Trip Planner
 
-A starter Python application using the Google Agent Development Kit (ADK) that implements a Trip Planning Refinement Loop using a Generator-Critic pattern.
+A starter Python application using the Google Agent Development Kit (ADK) that generates a trip plan, followed by a human-in-the-loop booking confirmation and execution using a simulated MCP server.
 
 ## Project Structure
 
 *   `trip_planner/`: The core agent package. Contains the agent definitions and workflow configuration.
-    *   `agent.py`: Defines the trip planner workflow, including the `trip_generator` agent, the `trip_critic` agent, and the refinement loop logic.
+    *   `agent.py`: Defines the trip planner workflow, including the generator agent, the booking extraction/execution agents, and the confirmation flow.
+    *   `mcp_server.py`: A simulated booking service (MCP server) that exposes tools to book hotels and activities.
+    *   `bookings.json.example`: Template for sample bookings data.
     *   `.env.example`: Template for environment variables (API keys) used by the ADK CLI.
-*   `main.py`: A local programmatic test harness to run the workflow in the terminal using the ADK Runner.
+*   `main.py`: A local programmatic test harness to run the workflow in the terminal, handling interrupts and responses.
 *   `requirements.txt`: Python dependencies.
 *   `.env.example`: Root-level template for environment variables used by `main.py`.
 
@@ -52,6 +54,12 @@ sudo apt install python3-pip python3-venv
     GOOGLE_API_KEY=AIzaSy...
     ```
 
+4.  **Optionally pre-populate bookings for testing (Optional)**:
+    If you want to test the "show my bookings" feature without running a full planning cycle first, you can pre-populate the database with sample bookings:
+    ```bash
+    cp trip_planner/bookings.json.example trip_planner/bookings.json
+    ```
+
 ## How to Run the Agent
 
 ### Method 1: Using ADK CLI (Recommended & Production Consistent)
@@ -71,4 +79,23 @@ If you want to run the agent using a custom Python script (useful for automated 
 Ensure your virtual environment is active, then run:
 ```bash
 python main.py
+```
+
+## Workflow Diagram
+
+```mermaid
+graph TD
+    START([User Input]) --> route_input[Route Input]
+    route_input -- "plan_trip" --> trip_generator[Generate Plan]
+    route_input -- "query_bookings" --> booking_query_agent[booking_query_agent Node with MCP Tools]
+    trip_generator --> present_plan[Present Plan]
+    present_plan --> booking_preparer[Extract Bookings]
+    booking_preparer --> confirm_booking{confirm_booking Node}
+    confirm_booking -- First Run: Yields RequestInput --> PAUSE[PAUSE: Wait for User Reply]
+    PAUSE -- User Input --> confirm_booking
+    confirm_booking -- Yes --> booking_agent[booking_agent Node with MCP Tools]
+    confirm_booking -- No --> cancel_booking[cancel_booking Node]
+    booking_agent --> END([END])
+    cancel_booking --> END
+    booking_query_agent --> END
 ```
