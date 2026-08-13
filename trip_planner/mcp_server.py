@@ -22,7 +22,11 @@ SCHEMAS_DIR = os.path.join(_current_dir, "schemas")
 TOOL_HANDLERS = {}
 
 def register_handler(name: str):
-  """Decorator to register a tool implementation handler."""
+  """Decorator to register a tool implementation handler in TOOL_HANDLERS.
+
+  Args:
+      name: The name of the MCP tool to register the handler for.
+  """
   def decorator(func):
     TOOL_HANDLERS[name] = func
     return func
@@ -30,6 +34,17 @@ def register_handler(name: str):
 
 # Load Tool Spec helper
 def load_tool_spec(filename: str) -> Tool:
+  """Loads a tool specification from a unified JSON file.
+
+  Parses the tool name, description, input schema, output schema, and
+  metadata annotations from the file and constructs an MCP Tool object.
+
+  Args:
+      filename: The name of the JSON spec file under the schemas directory.
+
+  Returns:
+      An initialized MCP Tool object.
+  """
   path = os.path.join(SCHEMAS_DIR, filename)
   with open(path, "r") as f:
     data = json.load(f)
@@ -47,6 +62,10 @@ def load_tool_spec(filename: str) -> Tool:
 # Load all tool specs dynamically on startup
 TOOLS = []
 def load_all_tools():
+  """Scans the schemas directory and loads all JSON tool specs dynamically.
+
+  Populates the global TOOLS list used by the ListTools handler.
+  """
   if not os.path.exists(SCHEMAS_DIR):
     logger.warning(f"Schemas directory not found: {SCHEMAS_DIR}")
     return
@@ -62,6 +81,13 @@ def load_all_tools():
 load_all_tools()
 
 def load_bookings():
+  """Loads the current bookings database from the local JSON file.
+
+  Returns:
+      A dictionary containing the bookings data, structured as
+      {"hotels": [...], "activities": [...]}. Returns default empty lists
+      if the file doesn't exist or is corrupted.
+  """
   if os.path.exists(BOOKINGS_FILE):
     try:
       with open(BOOKINGS_FILE, "r") as f:
@@ -73,6 +99,10 @@ def load_bookings():
 BOOKINGS = load_bookings()
 
 def save_bookings():
+  """Saves the current global BOOKINGS database to the local JSON file.
+
+  Serializes the bookings directory to JSON with indentation for readability.
+  """
   try:
     with open(BOOKINGS_FILE, "w") as f:
       json.dump(BOOKINGS, f, indent=2)
@@ -83,6 +113,19 @@ def save_bookings():
 
 @register_handler("book_hotel")
 async def do_book_hotel(args: dict) -> dict:
+  """Simulates booking a hotel.
+
+  Validates dates and appends the booking to the in-memory database.
+
+  Args:
+      args: Dictionary containing 'hotel_name', 'check_in', and 'check_out'.
+
+  Returns:
+      A structured dictionary confirming the booking details.
+
+  Raises:
+      ValueError: If check-in or check-out date is not in YYYY-MM-DD format.
+  """
   global BOOKINGS
   hotel_name = args.get("hotel_name")
   check_in = args.get("check_in")
@@ -113,6 +156,19 @@ async def do_book_hotel(args: dict) -> dict:
 
 @register_handler("book_activity")
 async def do_book_activity(args: dict) -> dict:
+  """Simulates booking an activity.
+
+  Validates date and appends the booking to the in-memory database.
+
+  Args:
+      args: Dictionary containing 'activity_name' and 'date'.
+
+  Returns:
+      A structured dictionary confirming the booking details.
+
+  Raises:
+      ValueError: If date is not in YYYY-MM-DD format.
+  """
   global BOOKINGS
   activity_name = args.get("activity_name")
   date = args.get("date")
@@ -139,6 +195,14 @@ async def do_book_activity(args: dict) -> dict:
 
 @register_handler("list_bookings")
 async def do_list_bookings(args: dict) -> dict:
+  """Lists all current bookings from the database.
+
+  Args:
+      args: Empty dictionary.
+
+  Returns:
+      A dictionary containing all loaded hotels and activities bookings.
+  """
   global BOOKINGS
   logger.info("Listing bookings")
   BOOKINGS = load_bookings()
@@ -148,13 +212,28 @@ async def do_list_bookings(args: dict) -> dict:
 
 @server.list_tools()
 async def handle_list_tools() -> list[Tool]:
-  """List available tools loaded dynamically from JSON specs."""
+  """List available tools loaded dynamically from JSON specs.
+
+  Returns:
+      A list of loaded MCP Tool objects.
+  """
   logger.info("Listing tools")
   return TOOLS
 
 @server.call_tool()
 async def handle_call_tool(name: str, arguments: dict | None) -> dict:
-  """Handle tool calls by routing them to registered implementation handlers."""
+  """Handle tool calls by routing them to registered implementation handlers.
+
+  Args:
+      name: The name of the tool being called.
+      arguments: Parameters passed by the caller.
+
+  Returns:
+      The dictionary output returned by the registered handler.
+
+  Raises:
+      ValueError: If no handler is registered for the tool name.
+  """
   logger.info(f"Calling tool: {name} with args: {arguments}")
   try:
     handler = TOOL_HANDLERS.get(name)
@@ -167,6 +246,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> dict:
     raise
 
 async def main():
+  """Runs the stdio MCP server transport loop."""
   async with stdio_server() as (read_stream, write_stream):
     await server.run(
         read_stream,
