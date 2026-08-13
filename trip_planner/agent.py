@@ -19,7 +19,7 @@ class RouterOutput(BaseModel):
 
 router_agent = Agent(
     name="router_agent",
-    model="gemini-3.5-flash",
+    model="gemini-3.5-flash-lite",
     description="Routes user input to the correct flow.",
     instruction=(
         "Analyze the user's input and determine if they want to plan a new trip, "
@@ -78,7 +78,7 @@ def present_plan(trip_plan: str):
 # 6. Booking Preparer Agent
 booking_preparer = Agent(
     name="booking_preparer",
-    model="gemini-3.5-flash",
+    model="gemini-3.5-flash-lite",
     description="Extracts hotels and activities for booking.",
     instruction=(
         "You are a booking coordinator. Analyze the final trip plan: {trip_plan}\n"
@@ -166,7 +166,7 @@ def cancel_booking():
 # 10. Booking Query Agent (to list bookings)
 booking_query_agent = Agent(
     name="booking_query_agent",
-    model="gemini-3.5-flash",
+    model="gemini-3.5-flash-lite",
     description="Answers questions about bookings.",
     instruction=(
         "You are a helpful assistant. Your job is to answer questions about the traveler's bookings. "
