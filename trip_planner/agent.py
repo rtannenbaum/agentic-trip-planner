@@ -1,101 +1,134 @@
+import os
+import sys
 from typing import Literal
-from google.adk import Agent, Event, Workflow
+from google.adk import Agent, Context, Event, Workflow
+from google.adk.events import RequestInput
+from google.adk.tools.mcp_tool import McpToolset
+from google.adk.tools.mcp_tool.mcp_session_manager import StdioConnectionParams
+from google.adk.workflow import node
+from mcp import StdioServerParameters
 from pydantic import BaseModel, Field
 
-# Define the evaluation schema for the critic agent
-class Evaluation(BaseModel):
-  grade: Literal["pass", "fail"] = Field(
-      description="Decide if the trip plan meets the traveler's preferences."
-  )
-  feedback: str = Field(
-      description="If the grade is fail, provide detailed feedback on what needs to be improved. If pass, summarize why it is good."
-  )
-
-# 1. Input Processing Node
-def process_input(node_input: str):
-  """Save the user's initial request to state."""
-  return Event(state={"trip_details": node_input})
+# 1. Input Routing Node
+def route_input(node_input: str, ctx: Context):
+  """Route input to trip generator or booking query agent based on content."""
+  query = node_input.lower()
+  if "booking" in query and any(w in query for w in ["show", "list", "view", "see", "get", "what", "my"]):
+    return Event(route="query_bookings")
+  return Event(state={"trip_details": node_input}, route="plan_trip")
 
 # 2. Trip Generator Agent
-# Generates the plan. If feedback is present in state, it refines it.
 trip_generator = Agent(
     name="trip_generator",
     model="gemini-3.5-flash",
-    description="Generates and refines trip itineraries.",
+    description="Generates trip itineraries.",
     instruction=(
-        "You are an expert trip generator agent. Your job is to generate a detailed trip itinerary "
+        "You are an expert trip generator agent. Your job is to generate a trip itinerary "
         "based on the traveler's preferences (destination, duration, budget, interests). "
         "Traveler preferences: {trip_details}\n\n"
-        "If you receive feedback from the critic agent, you MUST refine the itinerary to address "
-        "all the points raised, while still respecting the original preferences. "
-        "Current feedback to address: {critic_feedback?}"
+        "Please provide minimal details for the itinerary: just the name and a one-line description for each activity."
     ),
-    output_key="trip_plan", # Saves the generated plan to state['trip_plan']
+    output_key="trip_plan",
 )
 
-# 3. Trip Critic Agent
-# Evaluates the plan against the preferences.
-trip_critic = Agent(
-    name="trip_critic",
-    model="gemini-3.5-flash",
-    description="Evaluates trip itineraries against traveler preferences.",
-    instruction=(
-        "You are an expert trip critic agent. Your job is to evaluate the generated trip plan "
-        "against the traveler's preferences. "
-        "Traveler Preferences: {trip_details}\n"
-        "Generated Trip Plan: {trip_plan}\n\n"
-        "Evaluate if the plan matches the budget, duration, and interests, and if the logistics "
-        "(travel times, pacing) are realistic. "
-        "If the plan is good and meets all requirements, set grade to 'pass'. "
-        "If the plan has issues, set grade to 'fail' and provide detailed, constructive feedback "
-        "on what needs to be improved."
-    ),
-    output_schema=Evaluation,
-    output_key="evaluation", # Saves the Evaluation object (dict) to state['evaluation']
-)
-
-# 4. Evaluation Processing Node
-# Manages loop counter, saves feedback string, and routes.
-def process_evaluation(node_input: Evaluation, iteration_count: int = 0):
-  next_count = iteration_count + 1
-  
-  # Limit the loop to prevent infinite refinement loops
-  if next_count > 3:
-    return Event(
-        state={
-            "critic_feedback": "Max refinement iterations reached. Finalizing plan.",
-            "iteration_count": next_count
-        },
-        route="pass" # Force exit to presentation
-    )
-  
-  return Event(
-      state={
-          "critic_feedback": node_input.feedback,
-          "iteration_count": next_count
-      },
-      route=node_input.grade
-  )
-
-# 5. Final Presentation Node
+# 3. Final Presentation Node
 def present_plan(trip_plan: str):
-  """Present the final refined trip plan to the user."""
-  return f"### Final Refined Trip Plan\n\n{trip_plan}"
+  """Present the trip plan to the user."""
+  return f"### Trip Plan\n\n{trip_plan}"
 
-# Define the workflow (Refinement Loop)
+# 6. Booking Preparer Agent
+booking_preparer = Agent(
+    name="booking_preparer",
+    model="gemini-3.5-flash",
+    description="Extracts hotels and activities for booking.",
+    instruction=(
+        "You are a booking coordinator. Analyze the final trip plan: {trip_plan}\n"
+        "Extract the proposed hotel (name, check-in, check-out dates) and all activities "
+        "(name, date).\n"
+        "Format them as a clear, bulleted list of booking requests. "
+        "Do not include any other text."
+    ),
+    output_key="booking_requests",
+)
+
+# 7. Booking Confirmation Node (HITL)
+@node(rerun_on_resume=True)
+def confirm_booking(booking_requests: str, ctx: Context):
+  resume_input = ctx.resume_inputs.get("booking_confirmation")
+  if not resume_input:
+    yield RequestInput(
+        interrupt_id="booking_confirmation",
+        message=(
+            f"### Booking Confirmation Required\n\n"
+            f"Would you like me to book the following?\n"
+            f"{booking_requests}\n\n"
+            f"Please reply 'yes' to proceed, or 'no' to cancel."
+        ),
+    )
+    return
+
+  if resume_input.strip().lower() in ["yes", "y", "confirm"]:
+    yield Event(output="confirm", route="confirm")
+  else:
+    yield Event(output="cancel", route="cancel")
+
+# Configure the MCP server connection
+_current_dir = os.path.dirname(os.path.abspath(__file__))
+server_params = StdioServerParameters(
+    command=sys.executable,
+    args=[os.path.join(_current_dir, 'mcp_server.py')],
+)
+mcp_toolset = McpToolset(
+    connection_params=StdioConnectionParams(
+        server_params=server_params,
+    ),
+)
+
+# 8. Booking Execution Agent (with MCP tools)
+booking_agent = Agent(
+    name="booking_agent",
+    model="gemini-3.5-flash",
+    description="Executes hotel and activity bookings using MCP tools.",
+    instruction=(
+        "You are a booking agent. You have access to booking tools via the MCP server.\n"
+        "Your task is to book the hotel and activities listed in the booking requests: {booking_requests}.\n"
+        "Use the `book_hotel` and `book_activity` tools to perform the bookings.\n"
+        "After performing the bookings, call `list_bookings` to verify they were recorded, "
+        "and present a summary of the confirmed bookings to the user."
+    ),
+    tools=[mcp_toolset],
+)
+
+# 9. Cancel Booking Node
+def cancel_booking():
+  return "Booking cancelled. No reservations were made."
+
+# 10. Booking Query Agent (to list bookings)
+booking_query_agent = Agent(
+    name="booking_query_agent",
+    model="gemini-3.5-flash",
+    description="Answers questions about bookings.",
+    instruction=(
+        "You are a helpful assistant. Your job is to answer questions about the traveler's bookings. "
+        "Use the `list_bookings` tool to retrieve the current bookings and present them to the user. "
+        "If no bookings are found, let the user know."
+    ),
+    tools=[mcp_toolset],
+)
+
+# Define the complete workflow
 root_agent = Workflow(
     name="trip_planner_workflow",
     edges=[
-        (
-            "START",
-            process_input,
-            trip_generator,
-            trip_critic,
-            process_evaluation,
-        ),
-        (process_evaluation, {
-            "fail": trip_generator, # Loop back to generator
-            "pass": present_plan    # Go to final presentation
+        ("START", route_input),
+        (route_input, {
+            "plan_trip": trip_generator,
+            "query_bookings": booking_query_agent
         }),
+        (trip_generator, present_plan, booking_preparer, confirm_booking),
+        (confirm_booking, {
+            "confirm": booking_agent,
+            "cancel": cancel_booking
+        })
     ],
 )

@@ -1,0 +1,22 @@
+{
+  "hotels": [
+    {
+      "hotel_name": "Example Grand Hotel",
+      "check_in": "2026-10-10",
+      "check_out": "2026-10-15",
+      "status": "confirmed"
+    }
+  ],
+  "activities": [
+    {
+      "activity_name": "Example Sushi Making Class",
+      "date": "2026-10-11",
+      "status": "confirmed"
+    },
+    {
+      "activity_name": "Example Tokyo Tower Tour",
+      "date": "2026-10-12",
+      "status": "confirmed"
+    }
+  ]
+}

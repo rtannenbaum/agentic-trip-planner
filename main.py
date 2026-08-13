@@ -40,6 +40,8 @@ async def main():
 
   print("Trip Planner Agent is ready! Type 'exit' to quit.\n")
   
+  pending_interrupt_id = None
+  
   while True:
     try:
       # Use asyncio.to_thread to avoid blocking the event loop while waiting for input
@@ -51,13 +53,32 @@ async def main():
       if not query.strip():
         continue
 
-      # Construct the message using GenAI types
-      new_message = types.Content(
-          role="user",
-          parts=[types.Part(text=query)]
-      )
+      # Construct the message
+      if pending_interrupt_id:
+        # If we are responding to an interrupt, send a FunctionResponse
+        new_message = types.Content(
+            role="user",
+            parts=[
+                types.Part(
+                    function_response=types.FunctionResponse(
+                        id=pending_interrupt_id,
+                        name="adk_request_input",
+                        response={"result": query}
+                    )
+                )
+            ]
+        )
+        pending_interrupt_id = None # Clear it
+      else:
+        # Otherwise, send normal text
+        new_message = types.Content(
+            role="user",
+            parts=[types.Part(text=query)]
+        )
 
       print("Agent: ", end="", flush=True)
+      has_printed_anything = False
+      
       # Run the agent asynchronously
       async for event in runner.run_async(
           user_id=user_id,
@@ -66,8 +87,17 @@ async def main():
       ):
         if event.content and event.content.parts:
           for part in event.content.parts:
-            if part.text:
+            # Check for ADK request input interrupt
+            if part.function_call and part.function_call.name == "adk_request_input":
+              msg = part.function_call.args.get("message", "Input required:")
+              if has_printed_anything:
+                print()
+              print(f"\n--- REQUEST FOR INPUT ---\n{msg}\n-------------------------")
+              pending_interrupt_id = part.function_call.id
+              break
+            elif part.text:
               print(part.text, end="", flush=True)
+              has_printed_anything = True
       print("\n") # New line after response
       
     except KeyboardInterrupt:
