@@ -4,12 +4,12 @@ import re
 import sys
 from typing import Any, Literal
 from google.adk import Agent, Context, Event, Workflow
-from google.adk.events import RequestInput
 from google.adk.tools.mcp_tool import McpToolset
 from google.adk.tools.mcp_tool.mcp_session_manager import StdioConnectionParams
-from google.adk.workflow import node
+from google.adk.workflow import node, RetryConfig
 from mcp import StdioServerParameters
 from pydantic import BaseModel, Field
+from google.genai import types
 
 # 1. Router Schema and Agent
 class RouterOutput(BaseModel):
@@ -45,10 +45,20 @@ class BookingRequests(BaseModel):
       description="List of activity booking requests."
   )
 
+rate_limit_retry_config = RetryConfig(
+    max_attempts=4,
+    initial_delay=3.0,
+    backoff_factor=2.0,
+    exceptions=["ClientError"]
+)
+
+# Model Configurations (defaults to Vertex AI production models, can be overridden locally via environment)
+FLASH_MODEL = os.environ.get("FLASH_MODEL", "gemini-2.5-flash")
+PRO_MODEL = os.environ.get("PRO_MODEL", "gemini-2.5-pro")
 
 router_agent = Agent(
     name="router_agent",
-    model="gemini-3.5-flash-lite",
+    model=FLASH_MODEL,
     description="Routes user input to the correct flow.",
     instruction=(
         "Analyze the user's input and determine if they want to plan a new trip, "
@@ -61,6 +71,112 @@ router_agent = Agent(
     output_schema=RouterOutput,
     output_key="router_output",
 )
+
+# 1.5. Input Interceptor Node (to handle stateful interrupts)
+@node
+def input_router(node_input: str, ctx: Context):
+  """Intercepts and routes user input, handling conversational state machine turns."""
+  awaiting_input = ctx.state.get("awaiting_input")
+  
+  if awaiting_input:
+    input_type = awaiting_input.get("type")
+    original_data = awaiting_input.get("original_data")
+    
+    if input_type == "booking_confirmation":
+      cleaned = node_input.strip().lower()
+      if cleaned in ["yes", "y", "confirm", "go ahead"]:
+        # Set booking requests data and clear awaiting input
+        return Event(
+            state={"booking_requests_data": original_data, "awaiting_input": None}, 
+            route="confirm"
+        )
+      elif cleaned in ["no", "n", "cancel", "stop"]:
+        return Event(
+            state={"awaiting_input": None}, 
+            route="cancel"
+        )
+      else:
+        return Event(
+            output="Please reply with 'yes' to confirm the booking, or 'no' to cancel.",
+            route="keep_prompting"
+        )
+        
+    elif input_type == "trip_start_date":
+      start_date = node_input.strip()
+      if re.match(r"^\d{4}-\d{2}-\d{2}$", start_date):
+        return Event(
+            state={
+                "trip_start_date": start_date,
+                "booking_requests_data": original_data,
+                "awaiting_input": None
+            },
+            route="resume_date_resolution"
+        )
+      else:
+        return Event(
+            output=(
+                f"The provided date `{start_date}` does not match the expected **YYYY-MM-DD** format.\n"
+                "Please provide the start date in **YYYY-MM-DD** format (e.g., `2026-08-20`)."
+            ),
+            route="keep_prompting"
+        )
+
+    elif input_type == "hotel_check_in":
+      val = node_input.strip()
+      if re.match(r"^\d{4}-\d{2}-\d{2}$", val):
+        if "hotel" in original_data and original_data["hotel"]:
+          original_data["hotel"]["check_in"] = val
+        return Event(
+            state={"booking_requests_data": original_data, "awaiting_input": None},
+            route="resume_date_resolution"
+        )
+      else:
+        return Event(
+            output=f"Invalid format `{val}`. Please provide check-in date in **YYYY-MM-DD** format.",
+            route="keep_prompting"
+        )
+
+    elif input_type == "hotel_check_out":
+      val = node_input.strip()
+      if re.match(r"^\d{4}-\d{2}-\d{2}$", val):
+        if "hotel" in original_data and original_data["hotel"]:
+          original_data["hotel"]["check_out"] = val
+        return Event(
+            state={"booking_requests_data": original_data, "awaiting_input": None},
+            route="resume_date_resolution"
+        )
+      else:
+        return Event(
+            output=f"Invalid format `{val}`. Please provide check-out date in **YYYY-MM-DD** format.",
+            route="keep_prompting"
+        )
+
+    elif input_type.startswith("activity_date_"):
+      idx = awaiting_input.get("extra", {}).get("index")
+      val = node_input.strip()
+      if re.match(r"^\d{4}-\d{2}-\d{2}$", val) and idx is not None:
+        if "activities" in original_data and len(original_data["activities"]) > idx:
+          original_data["activities"][idx]["date"] = val
+        return Event(
+            state={"booking_requests_data": original_data, "awaiting_input": None},
+            route="resume_date_resolution"
+        )
+      else:
+        return Event(
+            output=f"Invalid format `{val}`. Please use **YYYY-MM-DD**.",
+            route="keep_prompting"
+        )
+
+  # Default flow: pass input along to router_agent
+  return Event(output=node_input, route="plan_normally")
+
+def present_message(node_input: str):
+  """Node that returns a message to the user."""
+  return types.Content(parts=[types.Part(text=node_input)])
+
+def suspend_workflow(node_input: str):
+  """Terminal node that just returns the output to suspend execution."""
+  return types.Content(parts=[types.Part(text=node_input)])
 
 def execute_route(router_output: RouterOutput):
   """Routes the workflow based on the classified user intent.
@@ -81,7 +197,7 @@ def execute_route(router_output: RouterOutput):
 # 2. Trip Generator Agent
 trip_generator = Agent(
     name="trip_generator",
-    model="gemini-3.5-flash",
+    model=PRO_MODEL,
     description="Generates trip itineraries.",
     instruction=(
         "You are an expert trip generator agent. Your job is to generate a trip itinerary "
@@ -90,6 +206,7 @@ trip_generator = Agent(
         "Please provide minimal details for the itinerary: just the name and a one-line description for each activity."
     ),
     output_key="trip_plan",
+    retry_config=rate_limit_retry_config,
 )
 
 # 3. Final Presentation Node
@@ -107,7 +224,7 @@ def present_plan(trip_plan: str):
 # 6. Booking Preparer Agent
 booking_preparer = Agent(
     name="booking_preparer",
-    model="gemini-3.5-flash-lite",
+    model=FLASH_MODEL,
     description="Extracts hotels and activities for booking into a structured format.",
     instruction=(
         "You are a booking coordinator. Analyze the final trip plan: {trip_plan}\n"
@@ -149,21 +266,25 @@ def serialize_bookings(booking_requests_data: BookingRequests):
   """Converts Pydantic BookingRequests to dict to avoid serialization issues."""
   return Event(state={"booking_requests_data": booking_requests_data.model_dump()})
 
-# 8. Date Resolution Node (HITL)
-@node(rerun_on_resume=True)
+# 8. Date Resolution Node (State-Machine)
+@node
 def resolve_booking_dates(booking_requests_data: dict | Any, ctx: Context):
   """Checks for relative dates ('Day X') and prompts for actual calendar dates if needed.
 
+  Uses state variables instead of platform interruptions.
+
   Args:
       booking_requests_data: The extracted BookingRequests (as dict or model).
-      ctx: The ADK context object used to retrieve resume inputs.
+      ctx: The ADK context object containing state.
 
-  Yields:
-      RequestInput: If prompting the user for the trip start date.
-      Event: With the updated booking_requests_data (with actual dates) to continue.
+  Returns:
+      Event: Routes to 'suspend' with prompting message if input is needed,
+             otherwise returns the finalized BookingRequests.
   """
   if isinstance(booking_requests_data, dict):
     booking_requests_data = BookingRequests(**booking_requests_data)
+
+  start_date = ctx.state.get("trip_start_date")
 
   # Check if we need the start date to resolve relative dates
   has_relative = False
@@ -174,31 +295,23 @@ def resolve_booking_dates(booking_requests_data: dict | Any, ctx: Context):
     if "day" in act.date.lower():
       has_relative = True
 
-  start_date = None
-  if has_relative:
-    start_date_input = ctx.resume_inputs.get("trip_start_date")
-    if not start_date_input:
-      yield RequestInput(
-          interrupt_id="trip_start_date",
-          message=(
-              "### Trip Start Date Required\n\n"
-              "I noticed your itinerary uses relative days (e.g., Day 1, Day 2).\n"
-              "To proceed with bookings, I need to know the actual calendar start date.\n\n"
-              "Please provide the start date in **YYYY-MM-DD** format (e.g., `2026-08-20`)."
-          ),
-      )
-      return
-    start_date = start_date_input.strip()
-    if not re.match(r"^\d{4}-\d{2}-\d{2}$", start_date):
-      yield RequestInput(
-          interrupt_id="trip_start_date",
-          message=(
-              "### Invalid Date Format\n\n"
-              f"The provided date `{start_date}` does not match the expected **YYYY-MM-DD** format.\n"
-              "Please provide the start date in **YYYY-MM-DD** format (e.g., `2026-08-20`)."
-          ),
-      )
-      return
+  if has_relative and not start_date:
+    msg = (
+        "### Trip Start Date Required\n\n"
+        "I noticed your itinerary uses relative days (e.g., Day 1, Day 2).\n"
+        "To proceed with bookings, I need to know the actual calendar start date.\n\n"
+        "Please provide the start date in **YYYY-MM-DD** format (e.g., `2026-08-20`)."
+    )
+    return Event(
+        output=msg,
+        state={
+            "awaiting_input": {
+                "type": "trip_start_date",
+                "original_data": booking_requests_data.model_dump()
+            }
+        },
+        route="suspend"
+    )
 
   # Resolve relative dates where possible
   resolved_hotel = None
@@ -223,123 +336,99 @@ def resolve_booking_dates(booking_requests_data: dict | Any, ctx: Context):
         ActivityBookingRequest(name=act.name, date=act_date)
     )
 
-  # Validate and prompt for missing/unresolved dates using RequestInput
+  # Validate and prompt for missing/unresolved dates using state variables
   if resolved_hotel:
     # Validate Check-in
     if not re.match(r"^\d{4}-\d{2}-\d{2}$", resolved_hotel.check_in):
-      hotel_in_input = ctx.resume_inputs.get("hotel_check_in")
-      if not hotel_in_input:
-        yield RequestInput(
-            interrupt_id="hotel_check_in",
-            message=(
-                f"### Hotel Check-in Date Required\n\n"
-                f"I couldn't resolve the check-in date `{resolved_hotel.check_in}` for **{resolved_hotel.name}**.\n"
-                f"Please provide the check-in date in **YYYY-MM-DD** format (e.g., `2026-08-20`)."
-            )
-        )
-        return
-      resolved_hotel.check_in = hotel_in_input.strip()
-      if not re.match(r"^\d{4}-\d{2}-\d{2}$", resolved_hotel.check_in):
-        yield RequestInput(
-            interrupt_id="hotel_check_in",
-            message=f"Invalid format `{resolved_hotel.check_in}`. Please use **YYYY-MM-DD**."
-        )
-        return
+      msg = (
+          f"### Hotel Check-in Date Required\n\n"
+          f"I couldn't resolve the check-in date `{resolved_hotel.check_in}` for **{resolved_hotel.name}**.\n"
+          f"Please provide the check-in date in **YYYY-MM-DD** format (e.g., `2026-08-20`)."
+      )
+      return Event(
+          output=msg,
+          state={
+              "awaiting_input": {
+                  "type": "hotel_check_in",
+                  "original_data": BookingRequests(hotel=resolved_hotel, activities=resolved_activities).model_dump()
+              }
+          },
+          route="suspend"
+      )
 
     # Validate Check-out
     if not re.match(r"^\d{4}-\d{2}-\d{2}$", resolved_hotel.check_out):
-      hotel_out_input = ctx.resume_inputs.get("hotel_check_out")
-      if not hotel_out_input:
-        yield RequestInput(
-            interrupt_id="hotel_check_out",
-            message=(
-                f"### Hotel Check-out Date Required\n\n"
-                f"I couldn't resolve the check-out date `{resolved_hotel.check_out}` for **{resolved_hotel.name}**.\n"
-                f"Please provide the check-out date in **YYYY-MM-DD** format (e.g., `2026-08-22`)."
-            )
-        )
-        return
-      resolved_hotel.check_out = hotel_out_input.strip()
-      if not re.match(r"^\d{4}-\d{2}-\d{2}$", resolved_hotel.check_out):
-        yield RequestInput(
-            interrupt_id="hotel_check_out",
-            message=f"Invalid format `{resolved_hotel.check_out}`. Please use **YYYY-MM-DD**."
-        )
-        return
+      msg = (
+          f"### Hotel Check-out Date Required\n\n"
+          f"I couldn't resolve the check-out date `{resolved_hotel.check_out}` for **{resolved_hotel.name}**.\n"
+          f"Please provide the check-out date in **YYYY-MM-DD** format (e.g., `2026-08-22`)."
+      )
+      return Event(
+          output=msg,
+          state={
+              "awaiting_input": {
+                  "type": "hotel_check_out",
+                  "original_data": BookingRequests(hotel=resolved_hotel, activities=resolved_activities).model_dump()
+              }
+          },
+          route="suspend"
+      )
 
   # Validate Activities
   for idx, act in enumerate(resolved_activities):
     if not re.match(r"^\d{4}-\d{2}-\d{2}$", act.date):
-      act_input = ctx.resume_inputs.get(f"activity_date_{idx}")
-      if not act_input:
-        yield RequestInput(
-            interrupt_id=f"activity_date_{idx}",
-            message=(
-                f"### Activity Date Required\n\n"
-                f"I couldn't resolve the date `{act.date}` for the activity **{act.name}**.\n"
-                f"Please provide the date for this activity in **YYYY-MM-DD** format."
-            )
-        )
-        return
-      act.date = act_input.strip()
-      if not re.match(r"^\d{4}-\d{2}-\d{2}$", act.date):
-        yield RequestInput(
-            interrupt_id=f"activity_date_{idx}",
-            message=f"Invalid format `{act.date}`. Please use **YYYY-MM-DD**."
-        )
-        return
+      msg = (
+          f"### Activity Date Required\n\n"
+          f"I couldn't resolve the date `{act.date}` for the activity **{act.name}**.\n"
+          f"Please provide the date for this activity in **YYYY-MM-DD** format."
+      )
+      return Event(
+          output=msg,
+          state={
+              "awaiting_input": {
+                  "type": f"activity_date_{idx}",
+                  "original_data": BookingRequests(hotel=resolved_hotel, activities=resolved_activities).model_dump(),
+                  "extra": {"index": idx}
+              }
+          },
+          route="suspend"
+      )
 
   finalized_requests = BookingRequests(
       hotel=resolved_hotel,
       activities=resolved_activities
   )
 
-  yield Event(state={"booking_requests_data": finalized_requests.model_dump()})
-
-# 9. Booking Confirmation Node (HITL)
-@node(rerun_on_resume=True)
-def confirm_booking(booking_requests_data: dict | Any, ctx: Context):
-  """Prompts the user to confirm the extracted bookings before execution (HITL).
-
-  Args:
-      booking_requests_data: The BookingRequests with actual dates (as dict or model).
-      ctx: The ADK context object used to retrieve resume inputs.
-
-  Yields:
-      RequestInput: If waiting for user reply.
-      Event: With output 'confirm' or 'cancel' to route the workflow.
-  """
-  resume_input = ctx.resume_inputs.get("booking_confirmation")
-
-  if isinstance(booking_requests_data, dict):
-    booking_requests_data = BookingRequests(**booking_requests_data)
-
   # Format structured data for user presentation
   formatted_requests = ""
-  if booking_requests_data.hotel:
-    h = booking_requests_data.hotel
+  if finalized_requests.hotel:
+    h = finalized_requests.hotel
     formatted_requests += f"*   **Hotel**: {h.name} (Check-in: {h.check_in}, Check-out: {h.check_out})\n"
-  if booking_requests_data.activities:
+  if finalized_requests.activities:
     formatted_requests += "*   **Activities**:\n"
-    for act in booking_requests_data.activities:
+    for act in finalized_requests.activities:
       formatted_requests += f"    *   {act.name} on {act.date}\n"
 
-  if not resume_input:
-    yield RequestInput(
-        interrupt_id="booking_confirmation",
-        message=(
-            f"### Booking Confirmation Required\n\n"
-            f"Would you like me to book the following?\n"
-            f"{formatted_requests}\n"
-            f"Please reply 'yes' to proceed, or 'no' to cancel."
-        ),
-    )
-    return
+  if not finalized_requests.hotel and not finalized_requests.activities:
+    return Event(output="There are no bookings to confirm.", route="suspend")
 
-  if resume_input.strip().lower() in ["yes", "y", "confirm"]:
-    yield Event(output="confirm", route="confirm")
-  else:
-    yield Event(output="cancel", route="cancel")
+  msg = (
+      f"### Booking Confirmation Required\n\n"
+      f"Would you like me to book the following?\n"
+      f"{formatted_requests}\n"
+      f"Please reply 'yes' to proceed, or 'no' to cancel."
+  )
+
+  return Event(
+      output=msg,
+      state={
+          "awaiting_input": {
+              "type": "booking_confirmation",
+              "original_data": finalized_requests.model_dump()
+          }
+      },
+      route="suspend"
+  )
 
 # Configure the MCP server connection
 server_params = StdioServerParameters(
@@ -355,16 +444,18 @@ mcp_toolset = McpToolset(
 # 9. Booking Execution Agent (with MCP tools)
 booking_agent = Agent(
     name="booking_agent",
-    model="gemini-3.5-flash",
+    model=FLASH_MODEL,
     description="Executes hotel and activity bookings using MCP tools.",
     instruction=(
-        "You are a booking agent. You have access to booking tools via the MCP server.\n"
+        "You are a booking agent. You have access to booking tools.\n"
         "Your task is to book the hotel and activities listed in the booking requests: {booking_requests_data}.\n"
         "Use the `book_hotel` and `book_activity` tools to perform the bookings.\n"
+        "When calling `book_activity`, map the activity name to the `activity_name` parameter.\n"
         "After performing the bookings, call `list_bookings` to verify they were recorded, "
         "and present a summary of the confirmed bookings to the user."
     ),
     tools=[mcp_toolset],
+    retry_config=rate_limit_retry_config,
 )
 
 # 9. Cancel Booking Node
@@ -379,7 +470,7 @@ def cancel_booking():
 # 10. Booking Query Agent (to list bookings)
 booking_query_agent = Agent(
     name="booking_query_agent",
-    model="gemini-3.5-flash-lite",
+    model=FLASH_MODEL,
     description="Answers questions about bookings.",
     instruction=(
         "You are a helpful assistant. Your job is to answer questions about the traveler's bookings. "
@@ -393,17 +484,22 @@ booking_query_agent = Agent(
 root_agent = Workflow(
     name="trip_planner_workflow",
     edges=[
-        ("START", router_agent),
+        ("START", input_router),
+        (input_router, {
+            "plan_normally": router_agent,
+            "confirm": booking_agent,
+            "cancel": cancel_booking,
+            "keep_prompting": present_message,
+            "resume_date_resolution": resolve_booking_dates
+        }),
         (router_agent, execute_route),
         (execute_route, {
             "plan_trip": trip_generator,
             "query_bookings": booking_query_agent
         }),
         (trip_generator, present_plan, booking_preparer, serialize_bookings, resolve_booking_dates),
-        (resolve_booking_dates, confirm_booking),
-        (confirm_booking, {
-            "confirm": booking_agent,
-            "cancel": cancel_booking
+        (resolve_booking_dates, {
+            "suspend": suspend_workflow
         })
     ],
 )

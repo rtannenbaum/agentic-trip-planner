@@ -17,8 +17,8 @@ async def main():
   Human-In-The-Loop (HITL) booking confirmations.
   """
   # Ensure API key is set
-  if not os.environ.get("GOOGLE_API_KEY") and not os.environ.get("GOOGLE_CLOUD_PROJECT"):
-    print("Warning: GOOGLE_API_KEY or GOOGLE_CLOUD_PROJECT not set.")
+  if not os.environ.get("GOOGLE_API_KEY") and not os.environ.get("GEMINI_API_KEY") and not os.environ.get("GOOGLE_CLOUD_PROJECT"):
+    print("Warning: GOOGLE_API_KEY, GEMINI_API_KEY or GOOGLE_CLOUD_PROJECT not set.")
     print("Please set them in your environment or in a .env file.")
     print("If you are using Google AI Studio, set GOOGLE_API_KEY.")
     print("If you are using Vertex AI, set GOOGLE_CLOUD_PROJECT and GOOGLE_CLOUD_LOCATION.")

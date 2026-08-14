@@ -85,21 +85,42 @@ python main.py
 
 ```mermaid
 graph TD
-    START([User Input]) --> router_agent[Router Agent]
+    START([User Input]) --> input_router{input_router Node}
+    input_router -- "plan_normally" --> router_agent[Router Agent]
+    input_router -- "confirm" --> booking_agent[booking_agent Node with MCP Tools]
+    input_router -- "cancel" --> cancel_booking[cancel_booking Node]
+    input_router -- "keep_prompting" --> present_message[present_message Node]
+    input_router -- "resume_date_resolution" --> resolve_booking_dates[resolve_booking_dates Node]
+
     router_agent --> execute_route[Execute Route]
     execute_route -- "plan_trip" --> trip_generator[Generate Plan]
     execute_route -- "query_bookings" --> booking_query_agent[booking_query_agent Node with MCP Tools]
+    
     trip_generator --> present_plan[Present Plan]
     present_plan --> booking_preparer[Extract Bookings]
-    booking_preparer --> confirm_booking{confirm_booking Node}
-    confirm_booking -- First Run: Yields RequestInput --> PAUSE[PAUSE: Wait for User Reply]
-    PAUSE -- User Input --> confirm_booking
-    confirm_booking -- Yes --> booking_agent[booking_agent Node with MCP Tools]
-    confirm_booking -- No --> cancel_booking[cancel_booking Node]
+    booking_preparer --> serialize_bookings[serialize_bookings Node]
+    serialize_bookings --> resolve_booking_dates
+    
+    resolve_booking_dates -- "suspend" --> suspend_workflow[suspend_workflow Node]
+    suspend_workflow --> PAUSE[PAUSE: Wait for User Reply]
+    PAUSE -- Subsequent Turn --> START
+    present_message --> PAUSE
+    
     booking_agent --> END([END])
     cancel_booking --> END
     booking_query_agent --> END
 ```
+
+## Conversational State Machine
+
+Instead of relying on platform-level interrupts (`RequestInput` yields) which require structured user payloads and break in text-only clients like the Google Cloud Console Agent Playground, this agent uses a **conversational state-machine pattern** backed by `ctx.state`.
+
+### How it works:
+1. **Turn Interception**: The workflow is structured with `input_router` as the root entry point. Every turn starts there.
+2. **Active State Check**: If the session has an active request stored in `ctx.state.awaiting_input`, `input_router` parses the plain text message, updates the state with variables (e.g. `trip_start_date` or confirmation intents), clears the waiting status, and routes execution directly to the target node.
+3. **Invalid Input Retry**: If the text input fails parsing or validation (e.g., date formats), the workflow prints a warning and returns to the user while keeping the state active.
+4. **Suspending**: Nodes that require user interaction (like resolving relative dates or getting confirmation) output their prompt message, set `awaiting_input` in the state, and route to `suspend_workflow` which halts the current thread execution.
+
 
 ## Infrastructure Deployment (Terraform)
 

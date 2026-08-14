@@ -3,6 +3,11 @@ import json
 import logging
 import os
 from datetime import datetime
+try:
+  from google.cloud import storage
+except ImportError:
+  storage = None
+
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import Tool, ToolAnnotations
@@ -81,15 +86,32 @@ def load_all_tools():
 load_all_tools()
 
 def load_bookings():
-  """Loads the current bookings database from the local JSON file.
+  """Loads the bookings database from GCS if BUCKET_NAME is set, else local JSON.
 
   Returns:
       A dictionary containing the bookings data, structured as
       {"hotels": [...], "activities": [...]}.
 
   Raises:
-      RuntimeError: If the database file exists but is corrupted or unreadable.
+      RuntimeError: If the database load fails.
   """
+  bucket_name = os.environ.get("BUCKET_NAME")
+  if bucket_name and storage:
+    logger.info(f"Loading bookings from GCS bucket: {bucket_name}")
+    try:
+      gcs_client = storage.Client()
+      bucket = gcs_client.bucket(bucket_name)
+      blob = bucket.blob("bookings.json")
+      if blob.exists():
+        content = blob.download_as_text()
+        return json.loads(content)
+      else:
+        logger.info("bookings.json not found in GCS bucket. Starting fresh.")
+        return {"hotels": [], "activities": []}
+    except Exception as e:
+      logger.error(f"Error loading bookings from GCS: {e}")
+      raise RuntimeError(f"Failed to load bookings from GCS: {e}")
+
   if os.path.exists(BOOKINGS_FILE):
     try:
       with open(BOOKINGS_FILE, "r") as f:
@@ -106,10 +128,20 @@ def load_bookings():
 BOOKINGS = load_bookings()
 
 def save_bookings():
-  """Saves the current global BOOKINGS database to the local JSON file.
+  """Saves the bookings database to GCS if BUCKET_NAME is set, else local JSON."""
+  bucket_name = os.environ.get("BUCKET_NAME")
+  if bucket_name and storage:
+    logger.info(f"Saving bookings to GCS bucket: {bucket_name}")
+    try:
+      gcs_client = storage.Client()
+      bucket = gcs_client.bucket(bucket_name)
+      blob = bucket.blob("bookings.json")
+      blob.upload_from_string(json.dumps(BOOKINGS, indent=2))
+      return
+    except Exception as e:
+      logger.error(f"Error saving bookings to GCS: {e}")
+      return
 
-  Serializes the bookings directory to JSON with indentation for readability.
-  """
   try:
     with open(BOOKINGS_FILE, "w") as f:
       json.dump(BOOKINGS, f, indent=2)

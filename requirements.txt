@@ -3,3 +3,6 @@ python-dotenv
 google-genai
 mcp
 fastmcp
+google-cloud-aiplatform
+google-cloud-storage
+

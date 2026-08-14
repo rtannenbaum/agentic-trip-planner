@@ -42,10 +42,10 @@ resource "google_service_account" "re_sa" {
   project      = var.project_id
 }
 
-# Grant SA access to the GCS bucket
+# Grant SA admin access to GCS bucket to read and write bookings database
 resource "google_storage_bucket_iam_member" "bucket_viewer" {
   bucket = google_storage_bucket.agent_bucket.name
-  role   = "roles/storage.objectViewer"
+  role   = "roles/storage.objectAdmin"
   member = "serviceAccount:${google_service_account.re_sa.email}"
 }
 
@@ -103,21 +103,21 @@ resource "google_secret_manager_secret_iam_member" "service_agent_secret_accesso
 
 # Upload requirements.txt
 resource "google_storage_bucket_object" "requirements" {
-  name   = "requirements.txt"
+  name   = "requirements-${filemd5("${path.module}/files/requirements.txt")}.txt"
   bucket = google_storage_bucket.agent_bucket.name
   source = "${path.module}/files/requirements.txt"
 }
 
 # Upload agent pickle file
 resource "google_storage_bucket_object" "agent_pickle" {
-  name   = "agent_engine.pkl"
+  name   = "agent_engine-${filemd5("${path.module}/files/agent_engine.pkl")}.pkl"
   bucket = google_storage_bucket.agent_bucket.name
   source = "${path.module}/files/agent_engine.pkl"
 }
 
 # Upload dependencies archive
 resource "google_storage_bucket_object" "dependencies" {
-  name   = "dependencies.tar.gz"
+  name   = "dependencies-${filemd5("${path.module}/files/dependencies.tar.gz")}.tar.gz"
   bucket = google_storage_bucket.agent_bucket.name
   source = "${path.module}/files/dependencies.tar.gz"
 }
@@ -135,8 +135,20 @@ resource "google_vertex_ai_reasoning_engine" "test_engine" {
     service_account = google_service_account.re_sa.email
 
     deployment_spec {
+      env {
+        name  = "BUCKET_NAME"
+        value = google_storage_bucket.agent_bucket.name
+      }
+      env {
+        name  = "FLASH_MODEL"
+        value = var.flash_model
+      }
+      env {
+        name  = "PRO_MODEL"
+        value = var.pro_model
+      }
       secret_env {
-        name = "GOOGLE_API_KEY"
+        name = "GEMINI_API_KEY"
 
         secret_ref {
           secret  = google_secret_manager_secret.api_key_secret.secret_id
