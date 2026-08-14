@@ -4,8 +4,13 @@
   "inputSchema": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "type": "object",
-    "properties": {},
-    "additionalProperties": false
+    "properties": {
+      "session_id": {
+        "type": "string",
+        "description": "The unique session ID to list bookings for."
+      }
+    },
+    "required": ["session_id"]
   },
   "outputSchema": {
     "$schema": "http://json-schema.org/draft-07/schema#",

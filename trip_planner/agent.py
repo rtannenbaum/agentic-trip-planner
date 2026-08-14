@@ -434,6 +434,9 @@ def resolve_booking_dates(booking_requests_data: dict | Any, ctx: Context):
 server_params = StdioServerParameters(
     command=sys.executable,
     args=['trip_planner/mcp_server.py'],
+    env={
+        "BUCKET_NAME": os.environ.get("BUCKET_NAME", ""),
+    }
 )
 mcp_toolset = McpToolset(
     connection_params=StdioConnectionParams(
@@ -441,19 +444,25 @@ mcp_toolset = McpToolset(
     ),
 )
 
+async def get_booking_agent_instruction(ctx: Context) -> str:
+  booking_requests_data = ctx.state.get("booking_requests_data", "")
+  session_id = ctx.session.id
+  return (
+      "You are a booking agent. You have access to booking tools.\n"
+      f"Your task is to book the hotel and activities listed in the booking requests: {booking_requests_data}.\n"
+      "Use the `book_hotel` and `book_activity` tools to perform the bookings.\n"
+      "When calling `book_activity`, map the activity name to the `activity_name` parameter.\n"
+      f"The current session ID is '{session_id}'. You MUST pass this session_id to all book_hotel and book_activity tool calls.\n"
+      f"After performing the bookings, call `list_bookings` (passing session_id='{session_id}') to verify they were recorded, "
+      "and present a summary of the confirmed bookings to the user."
+  )
+
 # 9. Booking Execution Agent (with MCP tools)
 booking_agent = Agent(
     name="booking_agent",
     model=FLASH_MODEL,
     description="Executes hotel and activity bookings using MCP tools.",
-    instruction=(
-        "You are a booking agent. You have access to booking tools.\n"
-        "Your task is to book the hotel and activities listed in the booking requests: {booking_requests_data}.\n"
-        "Use the `book_hotel` and `book_activity` tools to perform the bookings.\n"
-        "When calling `book_activity`, map the activity name to the `activity_name` parameter.\n"
-        "After performing the bookings, call `list_bookings` to verify they were recorded, "
-        "and present a summary of the confirmed bookings to the user."
-    ),
+    instruction=get_booking_agent_instruction,
     tools=[mcp_toolset],
     retry_config=rate_limit_retry_config,
 )
@@ -467,16 +476,20 @@ def cancel_booking():
   """
   return "Booking cancelled. No reservations were made."
 
+async def get_booking_query_agent_instruction(ctx: Context) -> str:
+  session_id = ctx.session.id
+  return (
+      "You are a helpful assistant. Your job is to answer questions about the traveler's bookings. "
+      f"Use the `list_bookings` tool (passing session_id='{session_id}') to retrieve the current bookings and present them to the user. "
+      "If no bookings are found, let the user know."
+  )
+
 # 10. Booking Query Agent (to list bookings)
 booking_query_agent = Agent(
     name="booking_query_agent",
     model=FLASH_MODEL,
     description="Answers questions about bookings.",
-    instruction=(
-        "You are a helpful assistant. Your job is to answer questions about the traveler's bookings. "
-        "Use the `list_bookings` tool to retrieve the current bookings and present them to the user. "
-        "If no bookings are found, let the user know."
-    ),
+    instruction=get_booking_query_agent_instruction,
     tools=[mcp_toolset],
 )
 

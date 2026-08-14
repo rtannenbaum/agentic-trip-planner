@@ -18,9 +18,13 @@
         "type": "string",
         "description": "Check-out date (YYYY-MM-DD).",
         "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+      },
+      "session_id": {
+        "type": "string",
+        "description": "The unique session ID to associate this booking with."
       }
     },
-    "required": ["hotel_name", "check_in", "check_out"],
+    "required": ["hotel_name", "check_in", "check_out", "session_id"],
     "additionalProperties": false
   },
   "outputSchema": {

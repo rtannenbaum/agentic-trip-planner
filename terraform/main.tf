@@ -134,6 +134,156 @@ resource "google_vertex_ai_reasoning_engine" "test_engine" {
     agent_framework = "google-adk"
     service_account = google_service_account.re_sa.email
 
+    class_methods = jsonencode([
+      {
+        name        = "get_session"
+        api_mode    = ""
+        description = "Retrieve session by ID"
+        parameters  = {
+          type     = "object"
+          required = ["user_id", "session_id"]
+          properties = {
+            user_id    = { type = "string" }
+            session_id = { type = "string" }
+          }
+        }
+      },
+      {
+        name        = "async_get_session"
+        api_mode    = "async"
+        description = "Retrieve session asynchronously by ID"
+        parameters  = {
+          type     = "object"
+          required = ["user_id", "session_id"]
+          properties = {
+            user_id    = { type = "string" }
+            session_id = { type = "string" }
+          }
+        }
+      },
+      {
+        name        = "list_sessions"
+        api_mode    = ""
+        description = "List all sessions for a user"
+        parameters  = {
+          type     = "object"
+          required = ["user_id"]
+          properties = {
+            user_id = { type = "string" }
+          }
+        }
+      },
+      {
+        name        = "async_list_sessions"
+        api_mode    = "async"
+        description = "List all sessions for a user asynchronously"
+        parameters  = {
+          type     = "object"
+          required = ["user_id"]
+          properties = {
+            user_id = { type = "string" }
+          }
+        }
+      },
+      {
+        name        = "create_session"
+        api_mode    = ""
+        description = "Create a new session"
+        parameters  = {
+          type     = "object"
+          required = ["user_id"]
+          properties = {
+            user_id    = { type = "string" }
+            session_id = { type = "string" }
+            state      = { type = "object" }
+          }
+        }
+      },
+      {
+        name        = "async_create_session"
+        api_mode    = "async"
+        description = "Create a new session asynchronously"
+        parameters  = {
+          type     = "object"
+          required = ["user_id"]
+          properties = {
+            user_id    = { type = "string" }
+            session_id = { type = "string" }
+            state      = { type = "object" }
+          }
+        }
+      },
+      {
+        name        = "delete_session"
+        api_mode    = ""
+        description = "Delete session by ID"
+        parameters  = {
+          type     = "object"
+          required = ["user_id", "session_id"]
+          properties = {
+            user_id    = { type = "string" }
+            session_id = { type = "string" }
+          }
+        }
+      },
+      {
+        name        = "async_delete_session"
+        api_mode    = "async"
+        description = "Delete session asynchronously by ID"
+        parameters  = {
+          type     = "object"
+          required = ["user_id", "session_id"]
+          properties = {
+            user_id    = { type = "string" }
+            session_id = { type = "string" }
+          }
+        }
+      },
+      {
+        name        = "stream_query"
+        api_mode    = "stream"
+        description = "Stream queries from the agent"
+        parameters  = {
+          type     = "object"
+          required = ["message", "user_id"]
+          properties = {
+            message    = { description = "Message string or object" }
+            user_id    = { type = "string" }
+            session_id = { type = "string" }
+            run_config = { type = "object" }
+          }
+        }
+      },
+      {
+        name        = "async_stream_query"
+        api_mode    = "async_stream"
+        description = "Stream queries asynchronously from the agent"
+        parameters  = {
+          type     = "object"
+          required = ["message", "user_id"]
+          properties = {
+            message        = { description = "Message string or object" }
+            user_id        = { type = "string" }
+            session_id     = { type = "string" }
+            session_events = { type = "array", items = { type = "object" } }
+            run_config     = { type = "object" }
+          }
+        }
+      },
+      {
+        name        = "streaming_agent_run_with_events"
+        api_mode    = "async_stream"
+        description = "Stream agent run with events asynchronously"
+        parameters  = {
+          type     = "object"
+          required = ["request_json"]
+          properties = {
+            request_json = { type = "string" }
+          }
+        }
+      }
+    ])
+
     deployment_spec {
       env {
         name  = "BUCKET_NAME"
@@ -146,6 +296,10 @@ resource "google_vertex_ai_reasoning_engine" "test_engine" {
       env {
         name  = "PRO_MODEL"
         value = var.pro_model
+      }
+      env {
+        name  = "PATH"
+        value = "/code/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
       }
       secret_env {
         name = "GEMINI_API_KEY"

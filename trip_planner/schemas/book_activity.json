@@ -13,9 +13,13 @@
         "type": "string",
         "description": "Date of the activity (YYYY-MM-DD).",
         "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+      },
+      "session_id": {
+        "type": "string",
+        "description": "The unique session ID to associate this booking with."
       }
     },
-    "required": ["activity_name", "date"],
+    "required": ["activity_name", "date", "session_id"],
     "additionalProperties": false
   },
   "outputSchema": {

@@ -85,8 +85,15 @@ def load_all_tools():
 
 load_all_tools()
 
-def load_bookings():
-  """Loads the bookings database from GCS if BUCKET_NAME is set, else local JSON.
+def get_bookings_filepath(session_id: str) -> str:
+  safe_session_id = "".join([c if c.isalnum() or c in "-_" else "_" for c in session_id])
+  return os.path.join(_current_dir, f"bookings_{safe_session_id}.json")
+
+def load_bookings(session_id: str) -> dict:
+  """Loads the bookings database for a session from GCS if BUCKET_NAME is set, else local JSON.
+
+  Args:
+      session_id: The unique session ID to load bookings for.
 
   Returns:
       A dictionary containing the bookings data, structured as
@@ -95,29 +102,35 @@ def load_bookings():
   Raises:
       RuntimeError: If the database load fails.
   """
+  if not session_id:
+    raise ValueError("session_id must be provided")
+
   bucket_name = os.environ.get("BUCKET_NAME")
+  blob_name = f"bookings_{session_id}.json"
+
   if bucket_name and storage:
-    logger.info(f"Loading bookings from GCS bucket: {bucket_name}")
+    logger.info(f"Loading bookings for session {session_id} from GCS bucket: {bucket_name}")
     try:
       gcs_client = storage.Client()
       bucket = gcs_client.bucket(bucket_name)
-      blob = bucket.blob("bookings.json")
+      blob = bucket.blob(blob_name)
       if blob.exists():
         content = blob.download_as_text()
         return json.loads(content)
       else:
-        logger.info("bookings.json not found in GCS bucket. Starting fresh.")
+        logger.info(f"{blob_name} not found in GCS bucket. Starting fresh.")
         return {"hotels": [], "activities": []}
     except Exception as e:
-      logger.error(f"Error loading bookings from GCS: {e}")
+      logger.error(f"Error loading bookings from GCS for session {session_id}: {e}")
       raise RuntimeError(f"Failed to load bookings from GCS: {e}")
 
-  if os.path.exists(BOOKINGS_FILE):
+  local_file = get_bookings_filepath(session_id)
+  if os.path.exists(local_file):
     try:
-      with open(BOOKINGS_FILE, "r") as f:
+      with open(local_file, "r") as f:
         return json.load(f)
     except Exception as e:
-      logger.error(f"Error loading bookings: {e}")
+      logger.error(f"Error loading local bookings for session {session_id}: {e}")
       raise RuntimeError(
           f"The bookings database file exists but could not be parsed (Error: {e}). "
           "To prevent further data loss, the server has blocked writes. "
@@ -125,28 +138,32 @@ def load_bookings():
       )
   return {"hotels": [], "activities": []}
 
-BOOKINGS = load_bookings()
+def save_bookings(session_id: str, bookings: dict):
+  """Saves the bookings database for a session to GCS if BUCKET_NAME is set, else local JSON."""
+  if not session_id:
+    raise ValueError("session_id must be provided")
 
-def save_bookings():
-  """Saves the bookings database to GCS if BUCKET_NAME is set, else local JSON."""
   bucket_name = os.environ.get("BUCKET_NAME")
+  blob_name = f"bookings_{session_id}.json"
+
   if bucket_name and storage:
-    logger.info(f"Saving bookings to GCS bucket: {bucket_name}")
+    logger.info(f"Saving bookings for session {session_id} to GCS bucket: {bucket_name}")
     try:
       gcs_client = storage.Client()
       bucket = gcs_client.bucket(bucket_name)
-      blob = bucket.blob("bookings.json")
-      blob.upload_from_string(json.dumps(BOOKINGS, indent=2))
+      blob = bucket.blob(blob_name)
+      blob.upload_from_string(json.dumps(bookings, indent=2))
       return
     except Exception as e:
-      logger.error(f"Error saving bookings to GCS: {e}")
+      logger.error(f"Error saving bookings to GCS for session {session_id}: {e}")
       return
 
+  local_file = get_bookings_filepath(session_id)
   try:
-    with open(BOOKINGS_FILE, "w") as f:
-      json.dump(BOOKINGS, f, indent=2)
+    with open(local_file, "w") as f:
+      json.dump(bookings, f, indent=2)
   except Exception as e:
-    logger.error(f"Error saving bookings: {e}")
+    logger.error(f"Error saving local bookings for session {session_id}: {e}")
 
 # --- Tool Implementations (Handlers) ---
 
@@ -154,18 +171,21 @@ def save_bookings():
 async def do_book_hotel(args: dict) -> dict:
   """Simulates booking a hotel.
 
-  Validates dates and appends the booking to the in-memory database.
+  Validates dates and appends the booking to the database.
 
   Args:
-      args: Dictionary containing 'hotel_name', 'check_in', and 'check_out'.
+      args: Dictionary containing 'hotel_name', 'check_in', 'check_out', and 'session_id'.
 
   Returns:
       A structured dictionary confirming the booking details.
 
   Raises:
-      ValueError: If check-in or check-out date is not in YYYY-MM-DD format.
+      ValueError: If check-in or check-out date is not in YYYY-MM-DD format, or session_id is missing.
   """
-  global BOOKINGS
+  session_id = args.get("session_id")
+  if not session_id:
+    raise ValueError("session_id is required for booking")
+
   hotel_name = args.get("hotel_name")
   check_in = args.get("check_in")
   check_out = args.get("check_out")
@@ -194,15 +214,17 @@ async def do_book_hotel(args: dict) -> dict:
         "Please ask the user to adjust their checkout date so it falls after the check-in date."
     )
     
-  logger.info(f"Booking hotel: {hotel_name} from {check_in} to {check_out}")
+  logger.info(f"Booking hotel: {hotel_name} from {check_in} to {check_out} for session {session_id}")
+  
+  bookings = load_bookings(session_id)
   booking = {
       "hotel_name": hotel_name,
       "check_in": check_in,
       "check_out": check_out,
       "status": "confirmed"
   }
-  BOOKINGS["hotels"].append(booking)
-  save_bookings()
+  bookings["hotels"].append(booking)
+  save_bookings(session_id, bookings)
   
   return {
       "status": "success",
@@ -214,18 +236,21 @@ async def do_book_hotel(args: dict) -> dict:
 async def do_book_activity(args: dict) -> dict:
   """Simulates booking an activity.
 
-  Validates date and appends the booking to the in-memory database.
+  Validates date and appends the booking to the database.
 
   Args:
-      args: Dictionary containing 'activity_name' and 'date'.
+      args: Dictionary containing 'activity_name', 'date', and 'session_id'.
 
   Returns:
       A structured dictionary confirming the booking details.
 
   Raises:
-      ValueError: If date is not in YYYY-MM-DD format.
+      ValueError: If date is not in YYYY-MM-DD format, or session_id is missing.
   """
-  global BOOKINGS
+  session_id = args.get("session_id")
+  if not session_id:
+    raise ValueError("session_id is required for booking")
+
   activity_name = args.get("activity_name")
   date = args.get("date")
   
@@ -238,14 +263,16 @@ async def do_book_activity(args: dict) -> dict:
         "Please ask the user to clarify or correct the date before retrying the booking."
     )
     
-  logger.info(f"Booking activity: {activity_name} on {date}")
+  logger.info(f"Booking activity: {activity_name} on {date} for session {session_id}")
+  
+  bookings = load_bookings(session_id)
   booking = {
       "activity_name": activity_name,
       "date": date,
       "status": "confirmed"
   }
-  BOOKINGS["activities"].append(booking)
-  save_bookings()
+  bookings["activities"].append(booking)
+  save_bookings(session_id, bookings)
   
   return {
       "status": "success",
@@ -255,18 +282,23 @@ async def do_book_activity(args: dict) -> dict:
 
 @register_handler("list_bookings")
 async def do_list_bookings(args: dict) -> dict:
-  """Lists all current bookings from the database.
+  """Lists all current bookings from the database for a session.
 
   Args:
-      args: Empty dictionary.
+      args: Dictionary containing 'session_id'.
 
   Returns:
       A dictionary containing all loaded hotels and activities bookings.
+      
+  Raises:
+      ValueError: If session_id is missing.
   """
-  global BOOKINGS
-  logger.info("Listing bookings")
-  BOOKINGS = load_bookings()
-  return BOOKINGS
+  session_id = args.get("session_id")
+  if not session_id:
+    raise ValueError("session_id is required to list bookings")
+
+  logger.info(f"Listing bookings for session {session_id}")
+  return load_bookings(session_id)
 
 # --- MCP Protocol Handlers ---
 
