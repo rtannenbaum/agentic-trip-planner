@@ -3,3 +3,18 @@
 __pycache__/
 *.pyc
 .adk/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+*.tfvars.json
+*.tfplan
+
+# Compiled / Binary Artifacts
+*.pkl
+*.tar.gz
+
+# Local Scratch Directory
+scratch/
