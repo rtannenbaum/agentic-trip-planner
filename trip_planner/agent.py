@@ -443,7 +443,7 @@ def get_mcp_env() -> dict[str, str]:
 
 # Configure the MCP server connection
 server_params = StdioServerParameters(
-    command=sys.executable,
+    command="python",
     args=['trip_planner/mcp_server.py'],
     env=get_mcp_env()
 )
