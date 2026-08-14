@@ -16,6 +16,33 @@ from mcp.types import Tool, ToolAnnotations
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("booking_mcp_server")
 
+# Configure OpenTelemetry Tracing if telemetry is enabled
+TRACING_ENABLED = os.environ.get("GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY") == "true"
+if TRACING_ENABLED:
+  try:
+    from opentelemetry import trace
+    from opentelemetry.exporter.cloud_trace import CloudTraceSpanExporter
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor
+    from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+
+    # Initialize the global TracerProvider
+    provider = TracerProvider()
+    trace.set_tracer_provider(provider)
+
+    # Export spans directly to Cloud Trace
+    cloud_trace_exporter = CloudTraceSpanExporter()
+    provider.add_span_processor(BatchSpanProcessor(cloud_trace_exporter))
+    
+    tracer = trace.get_tracer("booking_mcp_server")
+    logger.info("OpenTelemetry distributed tracing configured successfully.")
+  except Exception as e:
+    logger.warning(f"Failed to initialize OpenTelemetry tracing: {e}")
+    TRACING_ENABLED = False
+    tracer = None
+else:
+  tracer = None
+
 server = Server("BookingService")
 
 # Paths
@@ -316,6 +343,28 @@ async def handle_list_tools() -> list[Tool]:
   logger.info("Listing tools")
   return TOOLS
 
+
+def get_parent_context():
+  """Extracts parent OTel trace context from the process environment."""
+  if not TRACING_ENABLED:
+    return None
+  carrier = {}
+  for key in ["traceparent", "tracestate"]:
+    val = os.environ.get(key) or os.environ.get(key.upper())
+    if val:
+      carrier[key] = val
+  return TraceContextTextMapPropagator().extract(carrier=carrier)
+
+async def _execute_tool(name: str, args: dict, session_id: str | None) -> dict:
+  try:
+    handler = TOOL_HANDLERS.get(name)
+    if not handler:
+      raise ValueError(f"Unknown tool: {name}")
+    return await handler(args)
+  except Exception as e:
+    logger.exception(f"Error in handle_call_tool for {name}: {e}")
+    raise
+
 @server.call_tool()
 async def handle_call_tool(name: str, arguments: dict | None) -> dict:
   """Handle tool calls by routing them to registered implementation handlers.
@@ -330,16 +379,18 @@ async def handle_call_tool(name: str, arguments: dict | None) -> dict:
   Raises:
       ValueError: If no handler is registered for the tool name.
   """
+  args = arguments or {}
+  session_id = args.get("session_id")
   logger.info(f"Calling tool: {name} with args: {arguments}")
-  try:
-    handler = TOOL_HANDLERS.get(name)
-    if not handler:
-      raise ValueError(f"Unknown tool: {name}")
-    args = arguments or {}
-    return await handler(args)
-  except Exception as e:
-    logger.exception(f"Error in handle_call_tool for {name}: {e}")
-    raise
+  
+  parent_context = get_parent_context()
+  if TRACING_ENABLED and tracer:
+    with tracer.start_as_current_span(f"mcp_tool:{name}", context=parent_context) as span:
+      if session_id:
+        span.set_attribute("session_id", session_id)
+      return await _execute_tool(name, args, session_id)
+  else:
+    return await _execute_tool(name, args, session_id)
 
 async def main():
   """Runs the stdio MCP server transport loop."""

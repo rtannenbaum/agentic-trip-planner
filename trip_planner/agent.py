@@ -430,13 +430,22 @@ def resolve_booking_dates(booking_requests_data: dict | Any, ctx: Context):
       route="suspend"
   )
 
+def get_mcp_env() -> dict[str, str]:
+  mcp_env = {
+      "BUCKET_NAME": os.environ.get("BUCKET_NAME", ""),
+  }
+  # Forward telemetry & credentials variables for distributed tracing
+  prefixes_to_forward = ("OTEL_", "TRACE", "GOOGLE_CLOUD_")
+  for key, val in os.environ.items():
+    if key.startswith(prefixes_to_forward):
+      mcp_env[key] = val
+  return mcp_env
+
 # Configure the MCP server connection
 server_params = StdioServerParameters(
     command=sys.executable,
     args=['trip_planner/mcp_server.py'],
-    env={
-        "BUCKET_NAME": os.environ.get("BUCKET_NAME", ""),
-    }
+    env=get_mcp_env()
 )
 mcp_toolset = McpToolset(
     connection_params=StdioConnectionParams(
