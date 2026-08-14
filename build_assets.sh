@@ -42,8 +42,8 @@ mkdir -p "${TERRAFORM_FILES_DIR}"
 echo "1. Serializing Agent using cloudpickle..."
 "${PROJECT_ROOT}/.venv/bin/python" -c "
 import cloudpickle
-from trip_planner.agent import root_agent, DynamicAdkApp
-app = DynamicAdkApp(agent=root_agent, enable_tracing=True)
+from trip_planner.agent import root_agent, DynamicAdkApp, StructuredLoggingPlugin
+app = DynamicAdkApp(agent=root_agent, enable_tracing=True, plugins=[StructuredLoggingPlugin()])
 cloudpickle.dump(app, open('${TERRAFORM_FILES_DIR}/agent_engine.pkl', 'wb'))
 "
 echo "   -> Saved agent_engine.pkl"

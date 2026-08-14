@@ -629,3 +629,125 @@ class DynamicAdkApp(AdkApp):
         **kwargs
     ):
       yield event
+
+# 12. Structured JSON Logging Plugin for GCP Trace Timeline Correlation
+from google.adk.plugins.base_plugin import BasePlugin
+
+class StructuredLoggingPlugin(BasePlugin):
+  """Intercepts LLM and tool calls to output structured JSON logs to stderr for Cloud Logging ingestion."""
+  
+  def __init__(self):
+    super().__init__(name="structured_logging_plugin")
+
+  def _get_trace_context(self) -> dict:
+    from opentelemetry import trace
+    current_span = trace.get_current_span()
+    context = current_span.get_span_context()
+    if context.is_valid:
+      project_id = os.environ.get("GOOGLE_CLOUD_PROJECT", "unknown-project")
+      trace_id_hex = f"{context.trace_id:032x}"
+      span_id_hex = f"{context.span_id:016x}"
+      return {
+          "logging.googleapis.com/trace": f"projects/{project_id}/traces/{trace_id_hex}",
+          "logging.googleapis.com/spanId": span_id_hex,
+          "logging.googleapis.com/trace_sampled": context.trace_flags.sampled
+      }
+    return {}
+
+  def _log_structured(self, severity: str, message: str, payload: dict):
+    import json
+    log_record = {
+        "severity": severity,
+        "message": message,
+        **self._get_trace_context(),
+        **payload
+    }
+    # Print raw JSON directly to stderr which is parsed by GCP container log agent
+    print(json.dumps(log_record), file=sys.stderr)
+
+  async def before_model_callback(self, *, callback_context, llm_request):
+    is_observation = False
+    if llm_request.contents:
+      last_msg = llm_request.contents[-1]
+      if last_msg.parts:
+        for part in last_msg.parts:
+          if part.function_response:
+            is_observation = True
+            break
+
+    span_type = "observation" if is_observation else "llm_call"
+    self._log_structured(
+        severity="INFO",
+        message=f"Model Inference ({span_type}) started",
+        payload={
+            "span_type": span_type,
+            "status": "started",
+            "model_name": llm_request.model,
+            "prompt_length_messages": len(llm_request.contents)
+        }
+    )
+
+  async def after_model_callback(self, *, callback_context, llm_response):
+    usage = getattr(llm_response, 'usage_metadata', None)
+    usage_dict = {}
+    if usage:
+      usage_dict = {
+          "prompt_tokens": getattr(usage, 'prompt_token_count', 0),
+          "candidates_tokens": getattr(usage, 'candidates_token_count', 0),
+          "total_tokens": getattr(usage, 'total_token_count', 0)
+      }
+      
+    function_calls = []
+    if llm_response.content and llm_response.content.parts:
+      for part in llm_response.content.parts:
+        if part.function_call:
+          function_calls.append(part.function_call.name)
+              
+    self._log_structured(
+        severity="INFO",
+        message="Model Inference completed",
+        payload={
+            "span_type": "llm_call",
+            "status": "completed",
+            "usage": usage_dict,
+            "function_calls": function_calls,
+            "has_text_response": bool(llm_response.text if hasattr(llm_response, 'text') else False)
+        }
+    )
+
+  async def before_tool_callback(self, *, tool, tool_args, tool_context):
+    self._log_structured(
+        severity="INFO",
+        message=f"Tool execution started: {tool.name}",
+        payload={
+            "span_type": "tool_execution",
+            "status": "started",
+            "tool_name": tool.name,
+            "arguments": tool_args
+        }
+    )
+
+  async def after_tool_callback(self, *, tool, tool_args, tool_context, result):
+    self._log_structured(
+        severity="INFO",
+        message=f"Tool execution completed: {tool.name}",
+        payload={
+            "span_type": "tool_execution",
+            "status": "completed",
+            "tool_name": tool.name,
+            "result_summary": str(result)[:500]
+        }
+    )
+
+  async def on_tool_error_callback(self, *, tool, tool_args, tool_context, error):
+    self._log_structured(
+        severity="ERROR",
+        message=f"Tool execution failed: {tool.name}",
+        payload={
+            "span_type": "tool_execution",
+            "status": "failed",
+            "tool_name": tool.name,
+            "error_type": type(error).__name__,
+            "error_message": str(error)
+        }
+    )

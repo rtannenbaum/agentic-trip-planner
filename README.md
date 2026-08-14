@@ -223,3 +223,12 @@ The ADK framework automatically emits hierarchical spans for each conversation t
 *   **Tool Spans (e.g. `spans` for `book_hotel`, `book_activity`, `list_bookings`)**:
     *   **Inputs**: The tracing payload records the exact arguments passed by the model (e.g., `session_id`, date ranges, names). This is crucial for verifying that the model is passing the correct session variables.
     *   **Outputs**: The return value of the tool (e.g., `{"status": "success"}`) is captured.
+
+### 5. Structured JSON Logging:
+Because the ADK framework is platform-agnostic, it does not bundle a built-in structured JSON logger. Its standard `LoggingPlugin` prints plain-text logs for local terminal debugging which lack GCP trace linkage. 
+
+To bridge this, we register a custom `StructuredLoggingPlugin` globally on the `AdkApp`. It intercepts lifecycle events and prints single-line JSON log strings to `sys.stderr` containing:
+* **GCP Trace Linkage**: Injects `logging.googleapis.com/trace` and `logging.googleapis.com/spanId` extracted dynamically from `trace.get_current_span()` so logs bind inline to the Cloud Trace timeline.
+* **Execution Spans**: Records model inferences (`llm_call`), tool response interpretations (`observation` phase), and tool invocations (`tool_execution` inputs/outputs/errors).
+* **Automatic Ingestion**: The GCP Logging agent parses the stdout/stderr JSON stream into queryable `jsonPayload` fields automatically, avoiding the need for manual `google-cloud-logging` client library configurations.
+
