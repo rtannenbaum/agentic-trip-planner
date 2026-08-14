@@ -4,7 +4,13 @@
   "description": "Regression cases for the trip planner agent. Focused on deterministic, templated control-flow responses (date gating + HITL confirmation) that are robust to LLM non-determinism.",
   "eval_cases": [
     {
-      "eval_id": "date_gate_no_premature_booking",
+      "eval_id": "multi_turn_booking_flow_success",
+      "session_input": {
+        "app_name": "trip_planner",
+        "user_id": "eval_user_mt",
+        "session_id": "eval_session_mt",
+        "state": {}
+      },
       "conversation": [
         {
           "invocation_id": "inv-1",
@@ -12,7 +18,7 @@
             "role": "user",
             "parts": [
               {
-                "text": "Plan a 2-day hiking trip to Devil's Lake State Park. My budget is 100 and I love hiking."
+                "text": "Plan a 2-day hiking trip to Devil's Lake State Park. Stay 1 night at the Devil's Lake Resort. My budget is 1000."
               }
             ]
           },
@@ -23,18 +29,60 @@
                 "text": "### Trip Start Date Required\n\nI noticed your itinerary uses relative days (e.g., Day 1, Day 2).\nTo proceed with bookings, I need to know the actual calendar start date.\n\nPlease provide the start date in **YYYY-MM-DD** format (e.g., `2026-08-20`)."
               }
             ]
+          }
+        },
+        {
+          "invocation_id": "inv-2",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "2026-09-10"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "### Booking Confirmation Required\n\nWould you like me to book the following?\n*   **Hotel**: Devil's Lake Resort (Check-in: 2026-09-10, Check-out: 2026-09-11)\n\nPlease reply 'yes' to proceed, or 'no' to cancel."
+              }
+            ]
+          }
+        },
+        {
+          "invocation_id": "inv-3",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "yes"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "Here is the summary of your confirmed bookings:"
+              }
+            ]
           },
           "intermediate_data": {
-            "tool_uses": [],
-            "intermediate_responses": []
+            "tool_uses": [
+              {
+                "name": "book_hotel",
+                "args": {
+                  "session_id": "eval_session_mt",
+                  "hotel_name": "Devil's Lake Resort",
+                  "check_in": "2026-09-10",
+                  "check_out": "2026-09-11"
+                }
+              }
+            ]
           }
         }
-      ],
-      "session_input": {
-        "app_name": "trip_planner",
-        "user_id": "eval_user",
-        "state": {}
-      }
+      ]
     }
   ]
 }

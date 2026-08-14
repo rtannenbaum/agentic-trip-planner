@@ -441,13 +441,46 @@ def get_mcp_env() -> dict[str, str]:
       mcp_env[key] = val
   return mcp_env
 
+class DynamicMcpToolset(McpToolset):
+  def __setstate__(self, state):
+    super().__setstate__(state)
+    import inspect
+    import sys
+    from google.adk.tools.mcp_tool.mcp_session_manager import MCPSessionManager, StdioConnectionParams, StdioServerParameters
+    
+    if hasattr(self, '_connection_params'):
+      params = self._connection_params
+      if isinstance(params, StdioConnectionParams):
+        params.server_params = StdioServerParameters(
+            command=sys.executable,
+            args=params.server_params.args,
+            env=params.server_params.env
+        )
+      elif isinstance(params, StdioServerParameters):
+        self._connection_params = StdioServerParameters(
+            command=sys.executable,
+            args=params.args,
+            env=params.env
+        )
+      
+      init_params = inspect.signature(MCPSessionManager.__init__).parameters
+      kwargs = {
+          "connection_params": self._connection_params,
+          "errlog": getattr(self, '_errlog', sys.stderr),
+          "sampling_callback": getattr(self, '_sampling_callback', None),
+          "sampling_capabilities": getattr(self, '_sampling_capabilities', None),
+          "elicitation_callback": getattr(self, '_elicitation_callback', None),
+      }
+      filtered_kwargs = {k: v for k, v in kwargs.items() if k in init_params}
+      self._mcp_session_manager = MCPSessionManager(**filtered_kwargs)
+
 # Configure the MCP server connection
 server_params = StdioServerParameters(
-    command="python",
+    command=sys.executable,
     args=['trip_planner/mcp_server.py'],
     env=get_mcp_env()
 )
-mcp_toolset = McpToolset(
+mcp_toolset = DynamicMcpToolset(
     connection_params=StdioConnectionParams(
         server_params=server_params,
     ),

@@ -1,0 +1,257 @@
+{
+  "hotels": [
+    {
+      "hotel_name": "Devil's Lake Resort",
+      "check_in": "2026-09-10",
+      "check_out": "2026-09-12",
+      "status": "confirmed"
+    },
+    {
+      "hotel_name": "Devil's Lake Resort",
+      "check_in": "2026-09-10",
+      "check_out": "2026-09-11",
+      "status": "confirmed"
+    },
+    {
+      "hotel_name": "Devil's Lake Resort",
+      "check_in": "2026-09-10",
+      "check_out": "2026-09-11",
+      "status": "confirmed"
+    },
+    {
+      "hotel_name": "Devil's Lake Resort",
+      "check_in": "2026-09-10",
+      "check_out": "2026-09-11",
+      "status": "confirmed"
+    },
+    {
+      "hotel_name": "Devil's Lake Resort",
+      "check_in": "2026-09-10",
+      "check_out": "2026-09-11",
+      "status": "confirmed"
+    },
+    {
+      "hotel_name": "Devil's Lake Resort",
+      "check_in": "2026-09-10",
+      "check_out": "2026-09-11",
+      "status": "confirmed"
+    }
+  ],
+  "activities": [
+    {
+      "activity_name": "East Bluff Trail Hike",
+      "date": "2026-09-10",
+      "status": "confirmed"
+    },
+    {
+      "activity_name": "Devil's Doorway & Balanced Rock",
+      "date": "2026-09-10",
+      "status": "confirmed"
+    },
+    {
+      "activity_name": "South Shore Beach Relaxing",
+      "date": "2026-09-10",
+      "status": "confirmed"
+    },
+    {
+      "activity_name": "West Bluff Trail Hike",
+      "date": "2026-09-11",
+      "status": "confirmed"
+    },
+    {
+      "activity_name": "Tumbled Rocks Trail",
+      "date": "2026-09-11",
+      "status": "confirmed"
+    },
+    {
+      "activity_name": "Steinke Basin Loop",
+      "date": "2026-09-11",
+      "status": "confirmed"
+    },
+    {
+      "activity_name": "East Bluff Trail to Balanced Rock",
+      "date": "2026-09-10",
+      "status": "confirmed"
+    },
+    {
+      "activity_name": "North Shore Picnic",
+      "date": "2026-09-10",
+      "status": "confirmed"
+    },
+    {
+      "activity_name": "Devil's Doorway Loop",
+      "date": "2026-09-10",
+      "status": "confirmed"
+    },
+    {
+      "activity_name": "West Bluff Trail",
+      "date": "2026-09-11",
+      "status": "confirmed"
+    },
+    {
+      "activity_name": "Tumbled Rocks Trail",
+      "date": "2026-09-11",
+      "status": "confirmed"
+    },
+    {
+      "activity_name": "Parfrey's Glen State Natural Area",
+      "date": "2026-09-11",
+      "status": "confirmed"
+    },
+    {
+      "activity_name": "East Bluff Trail & Balanced Rock Hike",
+      "date": "2026-09-10",
+      "status": "confirmed"
+    },
+    {
+      "activity_name": "Devil\u2019s Doorway Loop",
+      "date": "2026-09-10",
+      "status": "confirmed"
+    },
+    {
+      "activity_name": "South Shore Beach Picnic",
+      "date": "2026-09-10",
+      "status": "confirmed"
+    },
+    {
+      "activity_name": "West Bluff Trail Hike",
+      "date": "2026-09-11",
+      "status": "confirmed"
+    },
+    {
+      "activity_name": "Tumbled Rocks Trail",
+      "date": "2026-09-11",
+      "status": "confirmed"
+    },
+    {
+      "activity_name": "Pewits Nest Gorge Hike",
+      "date": "2026-09-11",
+      "status": "confirmed"
+    },
+    {
+      "activity_name": "East Bluff Trail Hike",
+      "date": "2026-09-10",
+      "status": "confirmed"
+    },
+    {
+      "activity_name": "Picnic at North Shore",
+      "date": "2026-09-10",
+      "status": "confirmed"
+    },
+    {
+      "activity_name": "Balanced Rock Trail",
+      "date": "2026-09-10",
+      "status": "confirmed"
+    },
+    {
+      "activity_name": "West Bluff Trail Hike",
+      "date": "2026-09-11",
+      "status": "confirmed"
+    },
+    {
+      "activity_name": "Tumbled Rocks Trail",
+      "date": "2026-09-11",
+      "status": "confirmed"
+    },
+    {
+      "activity_name": "South Shore Beach Relaxing",
+      "date": "2026-09-11",
+      "status": "confirmed"
+    },
+    {
+      "activity_name": "East Bluff Trail Hike",
+      "date": "2026-09-10",
+      "status": "confirmed"
+    },
+    {
+      "activity_name": "Balanced Rock & Devil's Doorway",
+      "date": "2026-09-10",
+      "status": "confirmed"
+    },
+    {
+      "activity_name": "North Shore Picnic & Sunset",
+      "date": "2026-09-10",
+      "status": "confirmed"
+    },
+    {
+      "activity_name": "West Bluff Trail Hike",
+      "date": "2026-09-11",
+      "status": "confirmed"
+    },
+    {
+      "activity_name": "Tumbled Rocks Trail",
+      "date": "2026-09-11",
+      "status": "confirmed"
+    },
+    {
+      "activity_name": "Steinke Basin Loop",
+      "date": "2026-09-11",
+      "status": "confirmed"
+    },
+    {
+      "activity_name": "East Bluff Trail Hike",
+      "date": "2026-09-10",
+      "status": "confirmed"
+    },
+    {
+      "activity_name": "Dinner at Tumbled Rock Brewery & Kitchen",
+      "date": "2026-09-10",
+      "status": "confirmed"
+    },
+    {
+      "activity_name": "West Bluff Trail Hike",
+      "date": "2026-09-11",
+      "status": "confirmed"
+    },
+    {
+      "activity_name": "Kayaking on Devil's Lake",
+      "date": "2026-09-11",
+      "status": "confirmed"
+    },
+    {
+      "activity_name": "East Bluff Trail Hike",
+      "date": "2026-09-10",
+      "status": "confirmed"
+    },
+    {
+      "activity_name": "Dinner at Tumbled Rock Brewery & Kitchen",
+      "date": "2026-09-10",
+      "status": "confirmed"
+    },
+    {
+      "activity_name": "West Bluff Trail Hike",
+      "date": "2026-09-11",
+      "status": "confirmed"
+    },
+    {
+      "activity_name": "Picnic Lunch at North Shore Beach",
+      "date": "2026-09-11",
+      "status": "confirmed"
+    },
+    {
+      "activity_name": "Hike: East Bluff Trail to Devil's Doorway",
+      "date": "2026-09-10",
+      "status": "confirmed"
+    },
+    {
+      "activity_name": "Dinner: Tumbled Rock Brewery & Kitchen",
+      "date": "2026-09-10",
+      "status": "confirmed"
+    },
+    {
+      "activity_name": "Hike: West Bluff Trail",
+      "date": "2026-09-11",
+      "status": "confirmed"
+    },
+    {
+      "activity_name": "Lunch: North Shore Picnic",
+      "date": "2026-09-11",
+      "status": "confirmed"
+    },
+    {
+      "activity_name": "Walk: Tumbled Rocks Trail",
+      "date": "2026-09-11",
+      "status": "confirmed"
+    }
+  ]
+}

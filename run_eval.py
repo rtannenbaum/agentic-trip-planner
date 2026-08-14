@@ -32,7 +32,7 @@ def main():
       eval_dataset_file_path_or_dir=os.path.join(
           PROJECT_ROOT, "trip_planner.evalset.json"
       ),
-      num_runs=2,
+      num_runs=1,
       print_detailed_results=True,
   )
   if inspect.isawaitable(result):
