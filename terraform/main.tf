@@ -1,90 +1,106 @@
-# Enable Vertex AI API (Reasoning Engine)
+# 1. Google Project Service APIs Enablement
+
+# Vertex AI API (Enables Reasoning Engine runtime)
 resource "google_project_service" "aiplatform" {
   project            = var.project_id
   service            = "aiplatform.googleapis.com"
   disable_on_destroy = false
 }
 
-# Enable Storage API
+# Storage API (Enables artifact GCS buckets)
 resource "google_project_service" "storage" {
   project            = var.project_id
   service            = "storage.googleapis.com"
   disable_on_destroy = false
 }
 
-# Enable Secret Manager API
+# Secret Manager API (Enables secure API key storage)
 resource "google_project_service" "secretmanager" {
   project            = var.project_id
   service            = "secretmanager.googleapis.com"
   disable_on_destroy = false
 }
 
-# Enable Agent Registry API
+# Agent Registry API (Enables agent registry and tracing visualizations)
 resource "google_project_service" "agentregistry" {
   project            = var.project_id
   service            = "agentregistry.googleapis.com"
   disable_on_destroy = false
 }
 
-# Enable Cloud Logging API
+# Cloud Logging API (Enables container stdout/stderr log exports)
 resource "google_project_service" "logging" {
   project            = var.project_id
   service            = "logging.googleapis.com"
   disable_on_destroy = false
 }
 
-# Enable Telemetry API
+# Telemetry API (Enables unified OpenTelemetry metrics and traces ingestion)
 resource "google_project_service" "telemetry" {
   project            = var.project_id
   service            = "telemetry.googleapis.com"
   disable_on_destroy = false
 }
 
-# Random suffix for bucket name to avoid collisions
-resource "random_id" "bucket_suffix" {
-  byte_length = 4
+# Cloud Trace API (Enables GCP Cloud Trace ingestion backend)
+resource "google_project_service" "cloudtrace" {
+  project            = var.project_id
+  service            = "cloudtrace.googleapis.com"
+  disable_on_destroy = false
 }
 
-# GCS Bucket to store agent artifacts
-resource "google_storage_bucket" "agent_bucket" {
-  name                        = "${var.project_id}-agent-artifacts-${random_id.bucket_suffix.hex}"
-  location                    = var.location
-  project                     = var.project_id
-  uniform_bucket_level_access = true
-  force_destroy               = true # Suitable for test config
 
-  depends_on = [google_project_service.storage]
-}
+# 2. Custom Service Account for the Reasoning Engine
 
-# Service Account for the Reasoning Engine
-resource "google_service_account" "re_sa" {
+# Service Account (Dedicated running identity for the agent runtime container)
+resource "google_service_account" "agent_sa" {
   account_id   = "reasoning-engine-test-sa"
   display_name = "Service Account for Reasoning Engine Test"
   project      = var.project_id
 }
 
-# Grant SA admin access to GCS bucket to read and write bookings database
+
+# 3. IAM Bindings for Tracing, Logging, Monitoring, and Vertex AI Execution
+
+# GCS Bucket Access (Allows reading agent package & writing bookings database)
 resource "google_storage_bucket_iam_member" "bucket_viewer" {
   bucket = google_storage_bucket.agent_bucket.name
   role   = "roles/storage.objectAdmin"
-  member = "serviceAccount:${google_service_account.re_sa.email}"
+  member = "serviceAccount:${google_service_account.agent_sa.email}"
 }
 
-# Grant SA permission to write logs
+# Logging Log Writer (Allows exporting runtime and diagnostic logs)
 resource "google_project_iam_member" "log_writer" {
   project = var.project_id
   role    = "roles/logging.logWriter"
-  member  = "serviceAccount:${google_service_account.re_sa.email}"
+  member  = "serviceAccount:${google_service_account.agent_sa.email}"
 }
 
-# Grant SA permission to use Vertex AI (needed if agent calls models)
+# Vertex AI User (Allows evaluations and execution of core ML actions)
 resource "google_project_iam_member" "aiplatform_user" {
   project = var.project_id
   role    = "roles/aiplatform.user"
-  member  = "serviceAccount:${google_service_account.re_sa.email}"
+  member  = "serviceAccount:${google_service_account.agent_sa.email}"
 }
 
-# Create a secret for the API Key
+# Cloud Trace Agent (Allows writing trace spans)
+resource "google_project_iam_member" "trace_agent" {
+  project = var.project_id
+  role    = "roles/cloudtrace.agent"
+  member  = "serviceAccount:${google_service_account.agent_sa.email}"
+}
+
+# Monitoring Metric Writer (Allows writing evaluation/system metrics)
+resource "google_project_iam_member" "monitoring_writer" {
+  project = var.project_id
+  role    = "roles/monitoring.metricWriter"
+  member  = "serviceAccount:${google_service_account.agent_sa.email}"
+}
+
+
+# 4. Secret Manager Resources for the Gemini API Key
+
+# Secret Creator (Creates secret container)
 resource "google_secret_manager_secret" "api_key_secret" {
   provider  = google-beta
   project   = var.project_id
@@ -97,23 +113,23 @@ resource "google_secret_manager_secret" "api_key_secret" {
   depends_on = [google_project_service.secretmanager]
 }
 
-# Grant the Reasoning Engine SA access to the secret
+# Secret Accessor - Service Account (Allows reading the API key inside the agent)
 resource "google_secret_manager_secret_iam_member" "sa_secret_accessor" {
   provider  = google-beta
   project   = var.project_id
   secret_id = google_secret_manager_secret.api_key_secret.secret_id
   role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${google_service_account.re_sa.email}"
+  member    = "serviceAccount:${google_service_account.agent_sa.email}"
 }
 
-# Retrieve the Vertex AI Service Agent Identity
+# Service Agent Identity (Retrieves Vertex AI system identity for deployment)
 resource "google_project_service_identity" "aiplatform_sa" {
   provider = google-beta
   project  = var.project_id
   service  = "aiplatform.googleapis.com"
 }
 
-# Grant the Vertex AI Service Agent access to the secret so it can inject it at deployment time
+# Secret Accessor - Service Agent (Allows injecting the API key during container deployment)
 resource "google_secret_manager_secret_iam_member" "service_agent_secret_accessor" {
   provider  = google-beta
   project   = var.project_id
@@ -122,42 +138,50 @@ resource "google_secret_manager_secret_iam_member" "service_agent_secret_accesso
   member    = "serviceAccount:${google_project_service_identity.aiplatform_sa.email}"
 }
 
-# Enable Cloud Trace API
-resource "google_project_service" "cloudtrace" {
-  project            = var.project_id
-  service            = "cloudtrace.googleapis.com"
-  disable_on_destroy = false
+
+# 5. GCS Bucket and Artifact Uploads for Agent Deployment
+
+# Random Bucket Suffix (Prevents global bucket namespace collisions)
+resource "random_id" "bucket_suffix" {
+  byte_length = 4
 }
 
-# Grant SA permission to write traces
-resource "google_project_iam_member" "trace_agent" {
-  project = var.project_id
-  role    = "roles/cloudtrace.agent"
-  member  = "serviceAccount:${google_service_account.re_sa.email}"
+# Artifact GCS Bucket (Houses requirements.txt, agent_engine.pkl, and dependencies)
+resource "google_storage_bucket" "agent_bucket" {
+  name                        = "${var.project_id}-agent-artifacts-${random_id.bucket_suffix.hex}"
+  location                    = var.location
+  project                     = var.project_id
+  uniform_bucket_level_access = true
+  force_destroy               = true
+
+  depends_on = [google_project_service.storage]
 }
 
-# Upload requirements.txt
+# requirements.txt Upload (Uploads pinned python dependencies)
 resource "google_storage_bucket_object" "requirements" {
   name   = "requirements-${filemd5("${path.module}/files/requirements.txt")}.txt"
   bucket = google_storage_bucket.agent_bucket.name
   source = "${path.module}/files/requirements.txt"
 }
 
-# Upload agent pickle file
+# agent_engine.pkl Upload (Uploads serialized cloudpickle agent)
 resource "google_storage_bucket_object" "agent_pickle" {
   name   = "agent_engine-${filemd5("${path.module}/files/agent_engine.pkl")}.pkl"
   bucket = google_storage_bucket.agent_bucket.name
   source = "${path.module}/files/agent_engine.pkl"
 }
 
-# Upload dependencies archive
+# dependencies.tar.gz Upload (Uploads packed trip_planner MCP codebase)
 resource "google_storage_bucket_object" "dependencies" {
   name   = "dependencies-${filemd5("${path.module}/files/dependencies.tar.gz")}.tar.gz"
   bucket = google_storage_bucket.agent_bucket.name
   source = "${path.module}/files/dependencies.tar.gz"
 }
 
-# Create Reasoning Engine
+
+# 6. Defining the Vertex AI Reasoning Engine
+
+# Reasoning Engine (Creates the Vertex AI Reasoning Engine using the ADK framework)
 resource "google_vertex_ai_reasoning_engine" "test_engine" {
   provider     = google-beta
   project      = var.project_id
@@ -167,7 +191,7 @@ resource "google_vertex_ai_reasoning_engine" "test_engine" {
 
   spec {
     agent_framework = "google-adk"
-    service_account = google_service_account.re_sa.email
+    service_account = google_service_account.agent_sa.email
 
     class_methods = jsonencode([
       {
@@ -348,6 +372,14 @@ resource "google_vertex_ai_reasoning_engine" "test_engine" {
         name  = "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"
         value = "EVENT_ONLY"
       }
+      env {
+        name  = "OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED"
+        value = "true"
+      }
+      env {
+        name  = "OTEL_SERVICE_NAME"
+        value = "agent-platform-test"
+      }
       secret_env {
         name = "GEMINI_API_KEY"
 
@@ -375,6 +407,7 @@ resource "google_vertex_ai_reasoning_engine" "test_engine" {
     google_storage_bucket_iam_member.bucket_viewer,
     google_project_iam_member.log_writer,
     google_project_iam_member.trace_agent,
+    google_project_iam_member.monitoring_writer,
     google_project_iam_member.aiplatform_user,
     google_secret_manager_secret_iam_member.sa_secret_accessor,
     google_secret_manager_secret_iam_member.service_agent_secret_accessor

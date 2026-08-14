@@ -5,6 +5,8 @@ mcp
 fastmcp
 google-cloud-aiplatform
 google-cloud-storage
-google-cloud-trace
-opentelemetry-sdk
-opentelemetry-exporter-gcp-trace
+google-cloud-trace>=1.11.0
+opentelemetry-sdk>=1.21.0
+opentelemetry-exporter-gcp-trace>=1.6.0
+opentelemetry-exporter-otlp-proto-http>=1.21.0
+
