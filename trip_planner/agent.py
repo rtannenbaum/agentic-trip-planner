@@ -49,7 +49,7 @@ rate_limit_retry_config = RetryConfig(
     max_attempts=4,
     initial_delay=3.0,
     backoff_factor=2.0,
-    exceptions=["ClientError"]
+    exceptions=["ResourceExhausted", "ServerError", "ServiceUnavailable"]
 )
 
 # Model Configurations (defaults to Vertex AI production models, can be overridden locally via environment)
