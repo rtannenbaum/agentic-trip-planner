@@ -1,3 +1,8 @@
+# Retrieve Project Metadata (Used for project number lookup)
+data "google_project" "project" {
+  project_id = var.project_id
+}
+
 # 1. Google Project Service APIs Enablement
 
 # Vertex AI API (Enables Reasoning Engine runtime)
@@ -136,6 +141,15 @@ resource "google_secret_manager_secret_iam_member" "service_agent_secret_accesso
   secret_id = google_secret_manager_secret.api_key_secret.secret_id
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${google_project_service_identity.aiplatform_sa.email}"
+}
+
+# Secret Accessor - Reasoning Engine Service Agent (Allows injecting the API key during container deployment)
+resource "google_secret_manager_secret_iam_member" "re_service_agent_secret_accessor" {
+  provider  = google-beta
+  project   = var.project_id
+  secret_id = google_secret_manager_secret.api_key_secret.secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:service-${data.google_project.project.number}@gcp-sa-aiplatform-re.iam.gserviceaccount.com"
 }
 
 
@@ -410,6 +424,7 @@ resource "google_vertex_ai_reasoning_engine" "test_engine" {
     google_project_iam_member.monitoring_writer,
     google_project_iam_member.aiplatform_user,
     google_secret_manager_secret_iam_member.sa_secret_accessor,
-    google_secret_manager_secret_iam_member.service_agent_secret_accessor
+    google_secret_manager_secret_iam_member.service_agent_secret_accessor,
+    google_secret_manager_secret_iam_member.re_service_agent_secret_accessor
   ]
 }
