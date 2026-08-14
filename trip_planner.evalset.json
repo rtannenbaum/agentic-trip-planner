@@ -1,0 +1,40 @@
+{
+  "eval_set_id": "trip_planner_regression_v1",
+  "name": "Trip Planner Regression Suite",
+  "description": "Regression cases for the trip planner agent. Focused on deterministic, templated control-flow responses (date gating + HITL confirmation) that are robust to LLM non-determinism.",
+  "eval_cases": [
+    {
+      "eval_id": "date_gate_no_premature_booking",
+      "conversation": [
+        {
+          "invocation_id": "inv-1",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "Plan a 2-day hiking trip to Devil's Lake State Park. My budget is 100 and I love hiking."
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "### Trip Start Date Required\n\nI noticed your itinerary uses relative days (e.g., Day 1, Day 2).\nTo proceed with bookings, I need to know the actual calendar start date.\n\nPlease provide the start date in **YYYY-MM-DD** format (e.g., `2026-08-20`)."
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [],
+            "intermediate_responses": []
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "trip_planner",
+        "user_id": "eval_user",
+        "state": {}
+      }
+    }
+  ]
+}

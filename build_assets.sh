@@ -44,7 +44,7 @@ echo "1. Serializing Agent using cloudpickle..."
 import cloudpickle
 from trip_planner.agent import root_agent
 from vertexai.preview.reasoning_engines import AdkApp
-app = AdkApp(agent=root_agent)
+app = AdkApp(agent=root_agent, enable_tracing=True)
 cloudpickle.dump(app, open('${TERRAFORM_FILES_DIR}/agent_engine.pkl', 'wb'))
 "
 echo "   -> Saved agent_engine.pkl"

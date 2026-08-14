@@ -101,6 +101,20 @@ resource "google_secret_manager_secret_iam_member" "service_agent_secret_accesso
   member    = "serviceAccount:${google_project_service_identity.aiplatform_sa.email}"
 }
 
+# Enable Cloud Trace API
+resource "google_project_service" "cloudtrace" {
+  project            = var.project_id
+  service            = "cloudtrace.googleapis.com"
+  disable_on_destroy = false
+}
+
+# Grant SA permission to write traces
+resource "google_project_iam_member" "trace_agent" {
+  project = var.project_id
+  role    = "roles/cloudtrace.agent"
+  member  = "serviceAccount:${google_service_account.re_sa.email}"
+}
+
 # Upload requirements.txt
 resource "google_storage_bucket_object" "requirements" {
   name   = "requirements-${filemd5("${path.module}/files/requirements.txt")}.txt"
@@ -321,8 +335,10 @@ resource "google_vertex_ai_reasoning_engine" "test_engine" {
 
   depends_on = [
     google_project_service.aiplatform,
+    google_project_service.cloudtrace,
     google_storage_bucket_iam_member.bucket_viewer,
     google_project_iam_member.log_writer,
+    google_project_iam_member.trace_agent,
     google_project_iam_member.aiplatform_user,
     google_secret_manager_secret_iam_member.sa_secret_accessor,
     google_secret_manager_secret_iam_member.service_agent_secret_accessor

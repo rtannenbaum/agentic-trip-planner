@@ -122,6 +122,29 @@ Instead of relying on platform-level interrupts (`RequestInput` yields) which re
 4. **Suspending**: Nodes that require user interaction (like resolving relative dates or getting confirmation) output their prompt message, set `awaiting_input` in the state, and route to `suspend_workflow` which halts the current thread execution.
 
 
+## Local Evaluation (ADK Eval Suite)
+
+The project includes a regression suite using ADK's `AgentEvaluator` and the Vertex Gen AI Evaluation Service.
+
+### 1. Install evaluation dependencies:
+To run evaluations locally, you must install the `[eval]` extra package for `google-adk`:
+```bash
+.venv/bin/pip install "google-adk[eval]"
+```
+
+### 2. Run the evaluation suite:
+Run the regression tests using the programmatic runner script:
+```bash
+.venv/bin/python run_eval.py
+```
+This executes the test cases defined in `trip_planner.evalset.json` against the criteria in `test_config.json`. 
+
+By default, the regression suite validates:
+*   **Trip Start Date Required**: Given a relative-day itinerary with no start date, the agent must return the templated date gate message and must **not** call any booking tools prematurely.
+*   **Tool Trajectory Match**: Assures the exact sequence of tool calls aligns with expectations.
+*   **Response ROUGE Score**: Assures the agent output text matches expected control-flow templates.
+
+
 ## Infrastructure Deployment (Terraform)
 
 This project contains a Terraform configuration to package and deploy the agent to Google Cloud Platform as a **Vertex AI Reasoning Engine** (Vertex Custom Agent).
@@ -171,3 +194,23 @@ grep GOOGLE_API_KEY ../.env | cut -d '=' -f2 | tr -d '\n' | gcloud secrets versi
 *(Or upload it manually in the GCP Console under **Secret Manager** -> `gemini-api-key` -> **Add Version**).*
 
 The Reasoning Engine runtime will automatically load this secret into the container environment as the `GOOGLE_API_KEY` environment variable.
+
+
+## Observability (Cloud Trace)
+
+The agent has Cloud Trace integration enabled. Telemetry flows automatically from the deployed Vertex AI Reasoning Engine to Google Cloud's operations suite.
+
+### 1. Code Configuration:
+Tracing is enabled during serialization in `build_assets.sh`:
+```python
+app = AdkApp(agent=root_agent, enable_tracing=True)
+```
+
+### 2. Infrastructure Setup (Terraform):
+Terraform automatically handles:
+*   Enabling the Cloud Trace API (`cloudtrace.googleapis.com`).
+*   Granting the Cloud Trace Agent role (`roles/cloudtrace.agent`) to the Reasoning Engine's service account.
+
+### 3. How to view traces:
+*   **Agent Registry Panel:** Go to **Agent Platform** -> **Agent Registry** -> select your reasoning engine, and open the **Traces** tab to see step-by-step execution trees including model prompts/responses and tool arguments.
+*   **Trace Explorer:** Go to **Cloud Trace** -> **Trace explorer** in the GCP Console to see end-to-end latency charts and execution timelines.
