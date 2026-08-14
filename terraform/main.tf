@@ -392,7 +392,11 @@ resource "google_vertex_ai_reasoning_engine" "test_engine" {
       }
       env {
         name  = "OTEL_SERVICE_NAME"
-        value = "agent-platform-test"
+        value = var.display_name
+      }
+      env {
+        name  = "OTEL_RESOURCE_ATTRIBUTES"
+        value = var.agent_registry_id != "" ? "service.name=${var.display_name},agent.id=${var.agent_registry_id}" : "service.name=${var.display_name}"
       }
       secret_env {
         name = "GEMINI_API_KEY"

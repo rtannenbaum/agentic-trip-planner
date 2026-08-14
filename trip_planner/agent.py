@@ -76,6 +76,13 @@ router_agent = Agent(
 @node
 def input_router(node_input: str, ctx: Context):
   """Intercepts and routes user input, handling conversational state machine turns."""
+  from opentelemetry import trace
+  current_span = trace.get_current_span()
+  if current_span.is_recording():
+    current_span.set_attribute("session_id", ctx.session.id)
+    current_span.set_attribute("conversation_id", ctx.session.id)
+    current_span.set_attribute("user_prompt", node_input)
+
   awaiting_input = ctx.state.get("awaiting_input")
   
   if awaiting_input:
@@ -444,6 +451,12 @@ def get_mcp_env() -> dict[str, str]:
 class DynamicMcpToolset(McpToolset):
   def __setstate__(self, state):
     super().__setstate__(state)
+    try:
+      import google.cloud.logging
+      client = google.cloud.logging.Client()
+      client.setup_logging()
+    except Exception as e:
+      pass
     import inspect
     import sys
     from google.adk.tools.mcp_tool.mcp_session_manager import MCPSessionManager, StdioConnectionParams, StdioServerParameters

@@ -13,7 +13,13 @@ from mcp.server.stdio import stdio_server
 from mcp.types import Tool, ToolAnnotations
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+try:
+  import google.cloud.logging
+  client = google.cloud.logging.Client()
+  client.setup_logging()
+except Exception as e:
+  logging.basicConfig(level=logging.INFO)
+
 logger = logging.getLogger("booking_mcp_server")
 
 # Configure OpenTelemetry Tracing if telemetry is enabled

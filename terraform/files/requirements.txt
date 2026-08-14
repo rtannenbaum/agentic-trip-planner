@@ -9,4 +9,5 @@ google-cloud-trace>=1.11.0
 opentelemetry-sdk>=1.21.0
 opentelemetry-exporter-gcp-trace>=1.6.0
 opentelemetry-exporter-otlp-proto-http>=1.21.0
+google-cloud-logging>=3.0.0
 

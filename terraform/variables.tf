@@ -38,3 +38,9 @@ variable "pro_model" {
   type        = string
   default     = "gemini-2.5-pro"
 }
+
+variable "agent_registry_id" {
+  description = "The exact Agent Registry resource ID (e.g. projects/<PROJECT>/locations/<LOCATION>/agents/<ID>) extracted from the Cloud Console view."
+  type        = string
+  default     = ""
+}
