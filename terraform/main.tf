@@ -19,6 +19,13 @@ resource "google_project_service" "secretmanager" {
   disable_on_destroy = false
 }
 
+# Enable Agent Registry API
+resource "google_project_service" "agentregistry" {
+  project            = var.project_id
+  service            = "agentregistry.googleapis.com"
+  disable_on_destroy = false
+}
+
 # Random suffix for bucket name to avoid collisions
 resource "random_id" "bucket_suffix" {
   byte_length = 4
@@ -336,6 +343,7 @@ resource "google_vertex_ai_reasoning_engine" "test_engine" {
   depends_on = [
     google_project_service.aiplatform,
     google_project_service.cloudtrace,
+    google_project_service.agentregistry,
     google_storage_bucket_iam_member.bucket_viewer,
     google_project_iam_member.log_writer,
     google_project_iam_member.trace_agent,
