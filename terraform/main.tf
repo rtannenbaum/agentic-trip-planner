@@ -26,6 +26,20 @@ resource "google_project_service" "agentregistry" {
   disable_on_destroy = false
 }
 
+# Enable Cloud Logging API
+resource "google_project_service" "logging" {
+  project            = var.project_id
+  service            = "logging.googleapis.com"
+  disable_on_destroy = false
+}
+
+# Enable Telemetry API
+resource "google_project_service" "telemetry" {
+  project            = var.project_id
+  service            = "telemetry.googleapis.com"
+  disable_on_destroy = false
+}
+
 # Random suffix for bucket name to avoid collisions
 resource "random_id" "bucket_suffix" {
   byte_length = 4
@@ -356,6 +370,8 @@ resource "google_vertex_ai_reasoning_engine" "test_engine" {
     google_project_service.aiplatform,
     google_project_service.cloudtrace,
     google_project_service.agentregistry,
+    google_project_service.logging,
+    google_project_service.telemetry,
     google_storage_bucket_iam_member.bucket_viewer,
     google_project_iam_member.log_writer,
     google_project_iam_member.trace_agent,
