@@ -572,8 +572,40 @@ from vertexai.preview.reasoning_engines import AdkApp
 class DynamicAdkApp(AdkApp):
   """Custom AdkApp subclass that intercepts query requests to correlate OTel spans to playground session IDs."""
   
+  def __init__(self, *, agent, events_compaction_config=None, **kwargs):
+    super().__init__(agent=agent, **kwargs)
+    self._tmpl_attrs["events_compaction_config"] = events_compaction_config
+
   def set_up(self):
+    # Call base setup to populate services and config environment variables
     super().set_up()
+    
+    # Override Runner instantiation to pass App with compaction config!
+    from google.adk.runners import Runner
+    from google.adk.apps.app import App
+    
+    app_config = App(
+        name=self._tmpl_attrs.get("app_name"),
+        root_agent=self._tmpl_attrs.get("agent"),
+        plugins=self._tmpl_attrs.get("plugins") or [],
+        events_compaction_config=self._tmpl_attrs.get("events_compaction_config")
+    )
+    
+    self._tmpl_attrs["runner"] = Runner(
+        app=app_config,
+        session_service=self._tmpl_attrs.get("session_service"),
+        artifact_service=self._tmpl_attrs.get("artifact_service"),
+        memory_service=self._tmpl_attrs.get("memory_service"),
+        auto_create_session=True,
+    )
+    
+    self._tmpl_attrs["in_memory_runner"] = Runner(
+        app=app_config,
+        session_service=self._tmpl_attrs.get("in_memory_session_service"),
+        artifact_service=self._tmpl_attrs.get("in_memory_artifact_service"),
+        memory_service=self._tmpl_attrs.get("in_memory_memory_service"),
+        credential_service=self._tmpl_attrs.get("credential_service"),
+    )
 
   def stream_query(self, *, message, user_id, session_id=None, run_config=None, **kwargs):
     from opentelemetry import trace

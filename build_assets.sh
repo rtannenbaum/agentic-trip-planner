@@ -43,7 +43,23 @@ echo "1. Serializing Agent using cloudpickle..."
 "${PROJECT_ROOT}/.venv/bin/python" -c "
 import cloudpickle
 from trip_planner.agent import root_agent, DynamicAdkApp, StructuredLoggingPlugin
-app = DynamicAdkApp(agent=root_agent, enable_tracing=True, plugins=[StructuredLoggingPlugin()])
+from google.adk.apps._configs import EventsCompactionConfig
+from google.adk.apps.llm_event_summarizer import LlmEventSummarizer
+from google.adk.models.google_llm import Gemini
+
+summarizer_llm = Gemini(model='gemini-2.5-flash')
+compaction_config = EventsCompactionConfig(
+    summarizer=LlmEventSummarizer(llm=summarizer_llm),
+    token_threshold=12000,
+    event_retention_size=10
+)
+
+app = DynamicAdkApp(
+    agent=root_agent,
+    enable_tracing=True,
+    events_compaction_config=compaction_config,
+    plugins=[StructuredLoggingPlugin()]
+)
 cloudpickle.dump(app, open('${TERRAFORM_FILES_DIR}/agent_engine.pkl', 'wb'))
 "
 echo "   -> Saved agent_engine.pkl"

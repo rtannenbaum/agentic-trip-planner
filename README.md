@@ -232,3 +232,10 @@ To bridge this, we register a custom `StructuredLoggingPlugin` globally on the `
 * **Execution Spans**: Records model inferences (`llm_call`), tool response interpretations (`observation` phase), and tool invocations (`tool_execution` inputs/outputs/errors).
 * **Automatic Ingestion**: The GCP Logging agent parses the stdout/stderr JSON stream into queryable `jsonPayload` fields automatically, avoiding the need for manual `google-cloud-logging` client library configurations.
 
+### 6. Session Event Compaction:
+To manage memory footprint and prevent latency spikes during long-running sessions, the agent deploys with automated token-based context window compaction:
+* **The Config**: Uses ADK's `EventsCompactionConfig` with `token_threshold=12000` and `event_retention_size=10`. 
+* **The Rationale**: GCP log analysis shows that the `event_retention_size=10` window (retaining the last 10 raw events/5 full turns) consumes ~3,500 tokens (due to instructions, tool declarations, and tool JSON arrays). We set the threshold to `12000` to provide a comfortable headroom cushion. If the threshold were too low (e.g. 5,000), the app would trigger a compaction on every subsequent turn, causing a high-latency "compaction loop". At `12000`, normal planning loops (lasting 3-8 turns) never trigger compaction, leaving the history completely detailed, while abnormally long sessions are summarized efficiently.
+* **The Implementation**: Because template wrapper classes don't expose compaction parameters directly, we override `set_up()` in `DynamicAdkApp` to instantiate an explicit ADK `App` mapping `events_compaction_config` into `Runner` configurations, guaranteeing parity across local execution and GCP.
+
+
