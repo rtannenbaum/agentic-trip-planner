@@ -153,10 +153,14 @@ def save_bookings(session_id: str, bookings: dict):
       bucket = gcs_client.bucket(bucket_name)
       blob = bucket.blob(blob_name)
       blob.upload_from_string(json.dumps(bookings, indent=2))
+      logger.info(f"Saved bookings for session {session_id} to gs://{bucket_name}/{blob_name}")
       return
     except Exception as e:
       logger.error(f"Error saving bookings to GCS for session {session_id}: {e}")
-      return
+      raise RuntimeError(
+          f"Failed to persist bookings to GCS bucket '{bucket_name}' "
+          f"(blob '{blob_name}'): {e}"
+      )
 
   local_file = get_bookings_filepath(session_id)
   try:
