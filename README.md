@@ -212,5 +212,14 @@ Terraform automatically handles:
 *   Granting the Cloud Trace Agent role (`roles/cloudtrace.agent`) to the Reasoning Engine's service account.
 
 ### 3. How to view traces:
-*   **Agent Registry Panel:** Go to **Agent Platform** -> **Agent Registry** -> select your reasoning engine, and open the **Traces** tab to see step-by-step execution trees including model prompts/responses and tool arguments.
+*   **Agent Registry Panel:** Go to **Agent Platform** -> **Agent Registry** -> select your reasoning engine, and open the **Traces** tab to see step-by-step execution trees.
 *   **Trace Explorer:** Go to **Cloud Trace** -> **Trace explorer** in the GCP Console to see end-to-end latency charts and execution timelines.
+
+### 4. Spans and Data Captured by Tracing:
+The ADK framework automatically emits hierarchical spans for each conversation turn:
+*   **Root Spans (`agent.run` / `stream_query`)**: Captures the overall user request and the end-to-end latency.
+*   **Node Spans (e.g. `trip_generator`, `booking_agent`)**: Traces each step in the agent's conversational state machine as it navigates nodes.
+*   **LLM Call Spans**: Showcases the underlying Gemini model invocations, including tokens consumed.
+*   **Tool Spans (e.g. `spans` for `book_hotel`, `book_activity`, `list_bookings`)**:
+    *   **Inputs**: The tracing payload records the exact arguments passed by the model (e.g., `session_id`, date ranges, names). This is crucial for verifying that the model is passing the correct session variables.
+    *   **Outputs**: The return value of the tool (e.g., `{"status": "success"}`) is captured.
