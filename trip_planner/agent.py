@@ -14,6 +14,33 @@ from mcp import StdioServerParameters
 from pydantic import BaseModel, Field
 from google.genai import types
 
+_EMAIL_RE = re.compile(r"\b[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+\b")
+_PHONE_RE = re.compile(r"\b(?:\+\d{1,2}\s?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b")
+_SSN_RE = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
+_CC_RE = re.compile(r"\b(?:\d[ -]*?){13,16}\b")
+
+def scrub_pii_string(val: str) -> str:
+  """Redacts email, phone, SSN, and Credit Cards from a raw string value."""
+  if not val:
+    return val
+  val = _EMAIL_RE.sub("[REDACTED_EMAIL]", val)
+  val = _PHONE_RE.sub("[REDACTED_PHONE]", val)
+  val = _SSN_RE.sub("[REDACTED_SSN]", val)
+  val = _CC_RE.sub("[REDACTED_CC]", val)
+  return val
+
+def scrub_pii(data: Any) -> Any:
+  """Recursively traverses nested dictionaries, lists, or primitive types to scrub PII."""
+  if isinstance(data, dict):
+    return {k: scrub_pii(v) for k, v in data.items()}
+  elif isinstance(data, list):
+    return [scrub_pii(v) for v in data]
+  elif isinstance(data, str):
+    return scrub_pii_string(data)
+  else:
+    return data
+
+
 class LoggingPreloadMemoryTool(PreloadMemoryTool):
   """Subclass of PreloadMemoryTool that adds structured JSON logging for memory queries."""
 
@@ -45,11 +72,12 @@ class LoggingPreloadMemoryTool(PreloadMemoryTool):
       span_id = f"{span_context.span_id:016x}"
 
     # Log query initialization
+    scrubbed_query = scrub_pii_string(user_query)
     query_log = {
         "severity": "INFO",
-        "message": f"Querying long-term memory bank for user query: '{user_query}'",
+        "message": f"Querying long-term memory bank for user query: '{scrubbed_query}'",
         "span_type": "memory_search",
-        "query": user_query,
+        "query": scrubbed_query,
         "logging.googleapis.com/trace": trace_id,
         "logging.googleapis.com/spanId": span_id,
     }
@@ -65,13 +93,14 @@ class LoggingPreloadMemoryTool(PreloadMemoryTool):
         if part.text and "<PAST_CONVERSATIONS>" in part.text:
           injected_memories.append(part.text)
 
+    scrubbed_memories = [scrub_pii_string(mem) for mem in injected_memories]
     duration_ms = (time.time() - start_time) * 1000
     result_log = {
         "severity": "INFO",
-        "message": f"Memory bank search completed in {duration_ms:.2f}ms. Injected {len(injected_memories)} memory contexts.",
+        "message": f"Memory bank search completed in {duration_ms:.2f}ms. Injected {len(scrubbed_memories)} memory contexts.",
         "span_type": "memory_result",
         "duration_ms": duration_ms,
-        "injected_memories": injected_memories,
+        "injected_memories": scrubbed_memories,
         "logging.googleapis.com/trace": trace_id,
         "logging.googleapis.com/spanId": span_id,
     }
@@ -830,7 +859,7 @@ class StructuredLoggingPlugin(BasePlugin):
             "span_type": "tool_execution",
             "status": "started",
             "tool_name": tool.name,
-            "arguments": tool_args
+            "arguments": scrub_pii(tool_args)
         }
     )
 
@@ -842,7 +871,7 @@ class StructuredLoggingPlugin(BasePlugin):
             "span_type": "tool_execution",
             "status": "completed",
             "tool_name": tool.name,
-            "result_summary": str(result)[:500]
+            "result_summary": scrub_pii_string(str(result)[:500])
         }
     )
 
@@ -855,6 +884,6 @@ class StructuredLoggingPlugin(BasePlugin):
             "status": "failed",
             "tool_name": tool.name,
             "error_type": type(error).__name__,
-            "error_message": str(error)
+            "error_message": scrub_pii_string(str(error))
         }
     )

@@ -245,6 +245,16 @@ The agent leverages long-term semantic memory to personalize planning and bookin
 * **Automated Ingestion**: Chat events from completed sessions are automatically processed and committed to long-term memory by the Reasoning Engines platform at session termination, ensuring the agent continually learns from user interactions without slowing down active chat flows.
 * **Structured Telemetry Logging**: We subclassed the preloader as `LoggingPreloadMemoryTool` to publish structured JSON telemetry events to `stderr` during memory queries. It logs when a query is submitted (`span_type: "memory_search"`) and when search completes (`span_type: "memory_result"`), capturing the raw query, latency, trace IDs, and the exact preference statements injected into the session context.
 
+## Security & PII Protection
 
+To protect sensitive user data across the system boundary and telemetry pipelines, the agent deploys a defense-in-depth security architecture featuring both application-level sanitization and infrastructure-level boundaries:
 
+### 1. Application-Level Scrubbers (Local Sanitization)
+Because infrastructure gateways (like Model Armor) only block or inspect requests at the Vertex API perimeter, they cannot prevent local log streams from outputting raw strings to standard output/error. The agent deploys local regular-expression-based scrubbing hooks:
+* **Structured Logs**: The custom `StructuredLoggingPlugin` runs log payloads through a PII scrubber before serializing them to JSON. This guarantees that user query strings, model parameters, and raw logs containing phone numbers, emails, credit cards, SSNs, or names never reach Cloud Logging stdout/stderr streams.
+* **Memory Telemetry**: The `LoggingPreloadMemoryTool` scrubs query parameters and returned preference contexts prior to printing telemetry traces (`memory_search` / `memory_result`), preventing sensitive parameters from leaking into tracing spans.
 
+### 2. Infrastructure-Level Guardrails (GCP Perimeter)
+For enterprise-grade boundary enforcement, the Terraform blueprint configures Vertex AI native security gates:
+* **Vertex AI Model Armor**: Configured with a `google_model_armor_template` applying basic sensitive data protection filters to block requests/responses containing PII at the model boundary.
+* **Agent Gateway & Egress Egress Policies**: Outgoing tool executions targeting external MCP endpoints (e.g. booking server) are routed through a `google_network_services_agent_gateway` configured with a governed routing template (`AGENT_TO_ANYWHERE`). Egress requests are intercepted and inspected via an authorization extension backed by Model Armor to detect and block outgoing data leaks.

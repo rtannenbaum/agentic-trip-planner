@@ -53,6 +53,19 @@ resource "google_project_service" "cloudtrace" {
   service            = "cloudtrace.googleapis.com"
   disable_on_destroy = false
 }
+# Model Armor API (Enables runtime AI protection templates)
+resource "google_project_service" "modelarmor" {
+  project            = var.project_id
+  service            = "modelarmor.googleapis.com"
+  disable_on_destroy = false
+}
+
+# Network Services API (Enables Agent Gateway proxy configurations)
+resource "google_project_service" "networkservices" {
+  project            = var.project_id
+  service            = "networkservices.googleapis.com"
+  disable_on_destroy = false
+}
 
 
 # 2. Custom Service Account for the Reasoning Engine
@@ -206,6 +219,8 @@ resource "google_vertex_ai_reasoning_engine" "test_engine" {
   spec {
     agent_framework = "google-adk"
     service_account = google_service_account.agent_sa.email
+    agent_gateway   = google_network_services_agent_gateway.egress_gateway.id
+
 
     class_methods = jsonencode([
       {
@@ -431,4 +446,84 @@ resource "google_vertex_ai_reasoning_engine" "test_engine" {
     google_secret_manager_secret_iam_member.service_agent_secret_accessor,
     google_secret_manager_secret_iam_member.re_service_agent_secret_accessor
   ]
+}
+
+# --- PII Protection & Agent Egress (Model Armor + Agent Gateway) ---
+
+# PII Filter Template (Inspects and blocks prompts/responses violating sensitive rules)
+resource "google_model_armor_template" "agent_pii_filter" {
+  provider    = google-beta
+  project     = var.project_id
+  location    = var.location
+  template_id = "agent-pii-filter-template"
+
+  filter_config {
+    sdp_settings {
+      basic_config {
+        filter_enforcement = "ENABLED"
+      }
+    }
+  }
+
+  template_metadata {
+    custom_prompt_safety_error_code    = 400301
+    custom_prompt_safety_error_message = "Blocked: Request violates PII safety constraints."
+    log_sanitize_operations            = true
+    log_template_operations            = true
+    enforcement_type                   = "INSPECT_AND_BLOCK"
+  }
+}
+
+# Egress Gateway (Governs and routes outbound tool calls)
+resource "google_network_services_agent_gateway" "egress_gateway" {
+  provider = google-beta
+  project  = var.project_id
+  location = var.location
+  name     = "trip-planner-egress-gateway"
+
+  google_managed {
+    governed_access_path = "AGENT_TO_ANYWHERE"
+  }
+}
+
+# Authz Extension (Calls Model Armor service on egress proxy events)
+resource "google_network_services_authz_extension" "egress_filter_ext" {
+  provider  = google-beta
+  project   = var.project_id
+  location  = var.location
+  name      = "trip-planner-egress-ext"
+  service   = "modelarmor.${var.location}.rep.googleapis.com"
+  authority = ""
+  timeout   = "1s"
+  fail_open = false
+
+  metadata = {
+    model_armor_settings = jsonencode([
+      {
+        request_template_id  = google_model_armor_template.agent_pii_filter.id
+        response_template_id = google_model_armor_template.agent_pii_filter.id
+      }
+    ])
+  }
+}
+
+# Authz Policy (Hooks egress gateway events to filter extension)
+resource "google_network_security_authz_policy" "egress_security_policy" {
+  provider = google-beta
+  project  = var.project_id
+  location = var.location
+  name     = "trip-planner-egress-policy"
+
+  target {
+    resources = [google_network_services_agent_gateway.egress_gateway.id]
+  }
+
+  action         = "CUSTOM"
+  policy_profile = "CONTENT_AUTHZ"
+
+  custom_provider {
+    authz_extension {
+      resources = [google_network_services_authz_extension.egress_filter_ext.id]
+    }
+  }
 }
