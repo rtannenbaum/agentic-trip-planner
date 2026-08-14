@@ -653,8 +653,14 @@ class DynamicAdkApp(AdkApp):
     from google.adk.runners import Runner
     from google.adk.apps.app import App
     
+    app_name = self._tmpl_attrs.get("app_name") or "default-app-name"
+    # App name must start with a letter and contain only alphanumeric, underscores, and hyphens.
+    # GCP sets GOOGLE_CLOUD_AGENT_ENGINE_ID (which is a number) as the app_name, triggering pydantic validation errors.
+    if app_name and not app_name[0].isalpha():
+      app_name = f"app-{app_name}"
+
     app_config = App(
-        name=self._tmpl_attrs.get("app_name"),
+        name=app_name,
         root_agent=self._tmpl_attrs.get("agent"),
         plugins=self._tmpl_attrs.get("plugins") or [],
         events_compaction_config=self._tmpl_attrs.get("events_compaction_config")
