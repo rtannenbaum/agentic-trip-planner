@@ -44,3 +44,9 @@ variable "agent_registry_id" {
   type        = string
   default     = ""
 }
+
+variable "reasoning_engine_id" {
+  description = "The exact Vertex AI Reasoning Engine resource ID (e.g. 8809438344590131200) to map OTel traces to the resource dashboard."
+  type        = string
+  default     = ""
+}

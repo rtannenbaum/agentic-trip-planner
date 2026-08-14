@@ -451,12 +451,6 @@ def get_mcp_env() -> dict[str, str]:
 class DynamicMcpToolset(McpToolset):
   def __setstate__(self, state):
     super().__setstate__(state)
-    try:
-      import google.cloud.logging
-      client = google.cloud.logging.Client()
-      client.setup_logging()
-    except Exception as e:
-      pass
     import inspect
     import sys
     from google.adk.tools.mcp_tool.mcp_session_manager import MCPSessionManager, StdioConnectionParams, StdioServerParameters
@@ -571,3 +565,67 @@ root_agent = Workflow(
         })
     ],
 )
+
+# 11. Custom AdkApp subclass for Telemetry Session Correlation
+from vertexai.preview.reasoning_engines import AdkApp
+
+class DynamicAdkApp(AdkApp):
+  """Custom AdkApp subclass that intercepts query requests to correlate OTel spans to playground session IDs."""
+  
+  def set_up(self):
+    super().set_up()
+
+  def stream_query(self, *, message, user_id, session_id=None, run_config=None, **kwargs):
+    from opentelemetry import trace
+    import json
+    import logging
+    
+    current_span = trace.get_current_span()
+    s_id = session_id
+    if not s_id and run_config and isinstance(run_config, dict):
+      s_id = run_config.get("session_id")
+      
+    if s_id and current_span.is_recording():
+      current_span.set_attribute("session_id", s_id)
+      current_span.set_attribute("conversation_id", s_id)
+      if isinstance(message, str):
+        current_span.set_attribute("user_prompt", message)
+      elif isinstance(message, dict):
+        current_span.set_attribute("user_prompt", json.dumps(message))
+      logging.getLogger("booking_mcp_server").info(f"Trace correlated to session: {s_id}")
+      
+    yield from super().stream_query(
+        message=message,
+        user_id=user_id,
+        session_id=session_id,
+        run_config=run_config,
+        **kwargs
+    )
+
+  async def async_stream_query(self, *, message, user_id, session_id=None, run_config=None, **kwargs):
+    from opentelemetry import trace
+    import json
+    import logging
+    
+    current_span = trace.get_current_span()
+    s_id = session_id
+    if not s_id and run_config and isinstance(run_config, dict):
+      s_id = run_config.get("session_id")
+      
+    if s_id and current_span.is_recording():
+      current_span.set_attribute("session_id", s_id)
+      current_span.set_attribute("conversation_id", s_id)
+      if isinstance(message, str):
+        current_span.set_attribute("user_prompt", message)
+      elif isinstance(message, dict):
+        current_span.set_attribute("user_prompt", json.dumps(message))
+      logging.getLogger("booking_mcp_server").info(f"Trace correlated to session: {s_id}")
+      
+    async for event in super().async_stream_query(
+        message=message,
+        user_id=user_id,
+        session_id=session_id,
+        run_config=run_config,
+        **kwargs
+    ):
+      yield event

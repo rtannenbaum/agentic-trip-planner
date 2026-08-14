@@ -13,41 +13,17 @@ from mcp.server.stdio import stdio_server
 from mcp.types import Tool, ToolAnnotations
 
 # Configure logging
-try:
-  import google.cloud.logging
-  client = google.cloud.logging.Client()
-  client.setup_logging()
-except Exception as e:
-  logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO)
 
 logger = logging.getLogger("booking_mcp_server")
 
-# Configure OpenTelemetry Tracing if telemetry is enabled
-TRACING_ENABLED = os.environ.get("GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY") == "true"
-if TRACING_ENABLED:
-  try:
-    from opentelemetry import trace
-    from opentelemetry.exporter.cloud_trace import CloudTraceSpanExporter
-    from opentelemetry.sdk.trace import TracerProvider
-    from opentelemetry.sdk.trace.export import BatchSpanProcessor
-    from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
-
-    # Initialize the global TracerProvider
-    provider = TracerProvider()
-    trace.set_tracer_provider(provider)
-
-    # Export spans directly to Cloud Trace
-    cloud_trace_exporter = CloudTraceSpanExporter()
-    provider.add_span_processor(BatchSpanProcessor(cloud_trace_exporter))
-    
-    tracer = trace.get_tracer("booking_mcp_server")
-    logger.info("OpenTelemetry distributed tracing configured successfully.")
-  except Exception as e:
-    logger.warning(f"Failed to initialize OpenTelemetry tracing: {e}")
-    TRACING_ENABLED = False
-    tracer = None
-else:
-  tracer = None
+# Configure OpenTelemetry Tracing context propagation
+try:
+  from opentelemetry import context, trace
+  from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+  TRACING_ENABLED = True
+except ImportError:
+  TRACING_ENABLED = False
 
 server = Server("BookingService")
 
@@ -390,11 +366,12 @@ async def handle_call_tool(name: str, arguments: dict | None) -> dict:
   logger.info(f"Calling tool: {name} with args: {arguments}")
   
   parent_context = get_parent_context()
-  if TRACING_ENABLED and tracer:
-    with tracer.start_as_current_span(f"mcp_tool:{name}", context=parent_context) as span:
-      if session_id:
-        span.set_attribute("session_id", session_id)
+  if parent_context:
+    token = context.attach(parent_context)
+    try:
       return await _execute_tool(name, args, session_id)
+    finally:
+      context.detach(token)
   else:
     return await _execute_tool(name, args, session_id)
 

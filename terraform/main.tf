@@ -396,7 +396,7 @@ resource "google_vertex_ai_reasoning_engine" "test_engine" {
       }
       env {
         name  = "OTEL_RESOURCE_ATTRIBUTES"
-        value = var.agent_registry_id != "" ? "service.name=${var.display_name},agent.id=${var.agent_registry_id}" : "service.name=${var.display_name}"
+        value = var.reasoning_engine_id != "" ? "service.name=${var.display_name},gcp.resource_type=vertex_ai_reasoning_engine,gcp.resource.id=projects/${var.project_id}/locations/${var.location}/reasoningEngines/${var.reasoning_engine_id}" : (var.agent_registry_id != "" ? "service.name=${var.display_name},agent.id=${var.agent_registry_id}" : "service.name=${var.display_name}")
       }
       secret_env {
         name = "GEMINI_API_KEY"
