@@ -85,6 +85,22 @@ resource "google_secret_manager_secret_iam_member" "sa_secret_accessor" {
   member    = "serviceAccount:${google_service_account.re_sa.email}"
 }
 
+# Retrieve the Vertex AI Service Agent Identity
+resource "google_project_service_identity" "aiplatform_sa" {
+  provider = google-beta
+  project  = var.project_id
+  service  = "aiplatform.googleapis.com"
+}
+
+# Grant the Vertex AI Service Agent access to the secret so it can inject it at deployment time
+resource "google_secret_manager_secret_iam_member" "service_agent_secret_accessor" {
+  provider  = google-beta
+  project   = var.project_id
+  secret_id = google_secret_manager_secret.api_key_secret.secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_project_service_identity.aiplatform_sa.email}"
+}
+
 # Upload requirements.txt
 resource "google_storage_bucket_object" "requirements" {
   name   = "requirements.txt"
@@ -142,6 +158,7 @@ resource "google_vertex_ai_reasoning_engine" "test_engine" {
     google_storage_bucket_iam_member.bucket_viewer,
     google_project_iam_member.log_writer,
     google_project_iam_member.aiplatform_user,
-    google_secret_manager_secret_iam_member.sa_secret_accessor
+    google_secret_manager_secret_iam_member.sa_secret_accessor,
+    google_secret_manager_secret_iam_member.service_agent_secret_accessor
   ]
 }

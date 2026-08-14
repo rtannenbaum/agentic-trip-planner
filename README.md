@@ -100,3 +100,53 @@ graph TD
     cancel_booking --> END
     booking_query_agent --> END
 ```
+
+## Infrastructure Deployment (Terraform)
+
+This project contains a Terraform configuration to package and deploy the agent to Google Cloud Platform as a **Vertex AI Reasoning Engine** (Vertex Custom Agent).
+
+### What gets deployed:
+1. **APIs Enabled**: Vertex AI (`aiplatform`), Cloud Storage (`storage`), and Secret Manager (`secretmanager`).
+2. **Cloud Storage Bucket**: Stores the serialized agent engine and dependency source packages.
+3. **Service Account**: Creates `reasoning-engine-test-sa` with restricted IAM permissions (Logging, Storage, Vertex AI Model access).
+4. **Secret Manager API Key Slot**: Creates a secret container named `gemini-api-key` and allows the Service Account to read it.
+5. **Vertex AI Reasoning Engine**: The hosted runtime executing your workflow.
+
+---
+
+### How to Deploy
+
+#### 1. Compile and Package the Agent
+Before deploying, you must serialize the agent and package its dependencies. From the root directory, run:
+```bash
+./build_assets.sh
+```
+This generates the binary assets `agent_engine.pkl` and `dependencies.tar.gz` in `terraform/files/` (these are ignored by Git).
+
+#### 2. Configure project variables
+Create a `terraform/terraform.tfvars` file to specify your target GCP project:
+```hcl
+project_id = "your-gcp-project-id"
+location   = "us-central1"
+```
+
+#### 3. Run Terraform
+Run the deployment commands:
+```bash
+cd terraform
+terraform init
+terraform plan
+terraform apply
+```
+
+#### 4. Populate your API Key in Secret Manager
+For security, Terraform creates the Secret Manager container but does **not** set the API key value. 
+
+You must manually upload your Gemini API key to the secret. You can do this easily via the terminal (assuming you have your key in the root `.env` file):
+```bash
+# Extract the key from your local .env and add it to Secret Manager
+grep GOOGLE_API_KEY ../.env | cut -d '=' -f2 | tr -d '\n' | gcloud secrets versions add gemini-api-key --data-file=-
+```
+*(Or upload it manually in the GCP Console under **Secret Manager** -> `gemini-api-key` -> **Add Version**).*
+
+The Reasoning Engine runtime will automatically load this secret into the container environment as the `GOOGLE_API_KEY` environment variable.
