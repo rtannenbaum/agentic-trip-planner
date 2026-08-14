@@ -238,4 +238,13 @@ To manage memory footprint and prevent latency spikes during long-running sessio
 * **The Rationale**: GCP log analysis shows that the `event_retention_size=10` window (retaining the last 10 raw events/5 full turns) consumes ~3,500 tokens (due to instructions, tool declarations, and tool JSON arrays). We set the threshold to `12000` to provide a comfortable headroom cushion. If the threshold were too low (e.g. 5,000), the app would trigger a compaction on every subsequent turn, causing a high-latency "compaction loop". At `12000`, normal planning loops (lasting 3-8 turns) never trigger compaction, leaving the history completely detailed, while abnormally long sessions are summarized efficiently.
 * **The Implementation**: Because template wrapper classes don't expose compaction parameters directly, we override `set_up()` in `DynamicAdkApp` to instantiate an explicit ADK `App` mapping `events_compaction_config` into `Runner` configurations, guaranteeing parity across local execution and GCP.
 
+### 7. Persistent Personalization Memory:
+The agent leverages long-term semantic memory to personalize planning and booking decisions across independent conversation sessions:
+* **Vertex AI Memory Bank**: When deployed on GCP, the runner automatically initializes a native `VertexAiMemoryBankService` (scoped to the `user_id` and `agent_engine_id`). When running locally (or inside unit tests), it falls back to an `InMemoryMemoryService` dynamically.
+* **Semantic Retrieval (`preload_memory`)**: We register ADK's `preload_memory` system tool on the `trip_generator` and `booking_agent` nodes. On every conversational turn, the preloader automatically queries the Memory Bank, extracts historical user preferences (e.g. dietary restrictions, activity likes/dislikes, budget tiers), and injects them as transient context into the active LLM prompt.
+* **Automated Ingestion**: Chat events from completed sessions are automatically processed and committed to long-term memory by the Reasoning Engines platform at session termination, ensuring the agent continually learns from user interactions without slowing down active chat flows.
+* **Structured Telemetry Logging**: We subclassed the preloader as `LoggingPreloadMemoryTool` to publish structured JSON telemetry events to `stderr` during memory queries. It logs when a query is submitted (`span_type: "memory_search"`) and when search completes (`span_type: "memory_result"`), capturing the raw query, latency, trace IDs, and the exact preference statements injected into the session context.
+
+
+
 

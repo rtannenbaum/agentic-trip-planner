@@ -7,9 +7,77 @@ from google.adk import Agent, Context, Event, Workflow
 from google.adk.tools.mcp_tool import McpToolset
 from google.adk.tools.mcp_tool.mcp_session_manager import StdioConnectionParams
 from google.adk.workflow import node, RetryConfig
+import json
+import time
+from google.adk.tools.preload_memory_tool import PreloadMemoryTool
 from mcp import StdioServerParameters
 from pydantic import BaseModel, Field
 from google.genai import types
+
+class LoggingPreloadMemoryTool(PreloadMemoryTool):
+  """Subclass of PreloadMemoryTool that adds structured JSON logging for memory queries."""
+
+  async def process_llm_request(
+      self,
+      *,
+      tool_context,
+      llm_request,
+  ) -> None:
+    user_content = tool_context.user_content
+    if (
+        not user_content
+        or not user_content.parts
+        or not user_content.parts[0].text
+    ):
+      return
+
+    user_query = user_content.parts[0].text
+    start_time = time.time()
+
+    # Extract trace context
+    from opentelemetry import trace
+    current_span = trace.get_current_span()
+    trace_id = ""
+    span_id = ""
+    if current_span.is_recording():
+      span_context = current_span.get_span_context()
+      trace_id = f"projects/{os.environ.get('GOOGLE_CLOUD_PROJECT', 'tripplanner-dev-sandbox-456240')}/traces/{span_context.trace_id:032x}"
+      span_id = f"{span_context.span_id:016x}"
+
+    # Log query initialization
+    query_log = {
+        "severity": "INFO",
+        "message": f"Querying long-term memory bank for user query: '{user_query}'",
+        "span_type": "memory_search",
+        "query": user_query,
+        "logging.googleapis.com/trace": trace_id,
+        "logging.googleapis.com/spanId": span_id,
+    }
+    print(json.dumps(query_log), file=sys.stderr)
+
+    # Let the base class query the memory bank and update context
+    await super().process_llm_request(tool_context=tool_context, llm_request=llm_request)
+
+    # Inspect the updated llm_request to check what memories were injected
+    injected_memories = []
+    for content in llm_request.contents:
+      for part in content.parts or []:
+        if part.text and "<PAST_CONVERSATIONS>" in part.text:
+          injected_memories.append(part.text)
+
+    duration_ms = (time.time() - start_time) * 1000
+    result_log = {
+        "severity": "INFO",
+        "message": f"Memory bank search completed in {duration_ms:.2f}ms. Injected {len(injected_memories)} memory contexts.",
+        "span_type": "memory_result",
+        "duration_ms": duration_ms,
+        "injected_memories": injected_memories,
+        "logging.googleapis.com/trace": trace_id,
+        "logging.googleapis.com/spanId": span_id,
+    }
+    print(json.dumps(result_log), file=sys.stderr)
+
+preload_memory = LoggingPreloadMemoryTool()
 
 # 1. Router Schema and Agent
 class RouterOutput(BaseModel):
@@ -212,6 +280,7 @@ trip_generator = Agent(
         "Traveler preferences: {trip_details}\n\n"
         "Please provide minimal details for the itinerary: just the name and a one-line description for each activity."
     ),
+    tools=[preload_memory],
     output_key="trip_plan",
     retry_config=rate_limit_retry_config,
 )
@@ -512,7 +581,7 @@ booking_agent = Agent(
     model=FLASH_MODEL,
     description="Executes hotel and activity bookings using MCP tools.",
     instruction=get_booking_agent_instruction,
-    tools=[mcp_toolset],
+    tools=[mcp_toolset, preload_memory],
     retry_config=rate_limit_retry_config,
 )
 
