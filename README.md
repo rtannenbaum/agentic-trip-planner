@@ -87,10 +87,12 @@ python main.py
 graph TD
     User([User Prompt]) --> Router["🤖 Router Agent (Agent)"]:::agentStyle
     
-    subgraph Planning Phase
-        Router -- "New Trip Request" --> TripGen["🤖 Single-Pass Trip Generator (Agent)"]:::agentStyle
-        TripGen --> DateGate[Date Resolution Gate]
-        DateGate --> Pause[Pause: Present Plan & Request Confirmation]
+    subgraph Planning & Date Resolution Phase
+        Router -- "New Trip Request" --> TripGen["🤖 Trip Generator (Agent)"]:::agentStyle
+        TripGen --> DateGate{Start Date Set?}
+        
+        DateGate -- "No (Relative 'Day 1')" --> Gate1["HITL Gate 1: Request Start Date"]
+        DateGate -- "Yes (Calendar Dates Ready)" --> Gate2["HITL Gate 2: Request Booking Confirmation"]
     end
     
     subgraph Execution Phase
@@ -100,7 +102,8 @@ graph TD
         BookAgent --> MCP[MCP Server / GCS Storage]
     end
     
-    Pause == "User Replies ('Yes' / 'No')" ==> Router
+    Gate1 == "User Provides Date (YYYY-MM-DD)" ==> Router
+    Gate2 == "User Replies ('Yes' / 'No')" ==> Router
 
     classDef agentStyle fill:#1e3a8a,stroke:#3b82f6,color:#ffffff,stroke-width:2px;
 ```

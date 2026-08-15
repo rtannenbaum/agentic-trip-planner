@@ -378,10 +378,9 @@ def resolve_booking_dates(booking_requests_data: dict | Any, ctx: Context):
 
   if has_relative and not start_date:
     msg = (
-        "### Trip Start Date Required\n\n"
-        "I noticed your itinerary uses relative days (e.g., Day 1, Day 2).\n"
-        "To proceed with bookings, I need to know the actual calendar start date.\n\n"
-        "Please provide the start date in **YYYY-MM-DD** format (e.g., `2026-08-20`)."
+        "### When would you like to start your trip?\n\n"
+        "To help reserve your hotel and activities, please share your planned start date.\n\n"
+        "Please reply with your start date (e.g., `2026-08-20`)."
     )
     return Event(
         output=msg,

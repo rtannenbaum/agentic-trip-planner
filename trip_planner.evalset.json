@@ -26,7 +26,7 @@
             "role": "model",
             "parts": [
               {
-                "text": "### Trip Start Date Required\n\nI noticed your itinerary uses relative days (e.g., Day 1, Day 2).\nTo proceed with bookings, I need to know the actual calendar start date.\n\nPlease provide the start date in **YYYY-MM-DD** format (e.g., `2026-08-20`)."
+                "text": "### When would you like to start your trip?\n\nTo help reserve your hotel and activities, please share your planned start date.\n\nPlease reply with your start date (e.g., `2026-08-20`)."
               }
             ]
           }
