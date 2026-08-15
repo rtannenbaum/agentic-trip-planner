@@ -85,7 +85,7 @@ python main.py
 
 ```mermaid
 graph TD
-    User([User Prompt]) --> Router{Input Router}
+    User([User Prompt]) --> Router["🤖 Router Agent (Agent)"]:::agentStyle
     
     subgraph Planning Phase
         Router -- "New Trip Request" --> TripGen["🤖 Single-Pass Trip Generator (Agent)"]:::agentStyle
