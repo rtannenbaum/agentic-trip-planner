@@ -95,18 +95,27 @@ graph TD
         DateGate -- "Yes (Calendar Dates Ready)" --> Gate2["HITL Gate 2: Request Booking Confirmation"]
     end
     
-    subgraph Execution Phase
-        Router -- "User Confirms ('Yes')" --> BookAgent["🤖 Booking Agent (Agent)"]:::agentStyle
-        Router -- "User Cancels ('No')" --> Cancel[Cancel Handler]
+    subgraph Execution & Lifecycle Phase
+        Router -- "User Confirms ('Yes') or Cancels ('No')" --> BookAgent["🤖 Booking Agent (Agent)"]:::agentStyle
         
         BookAgent --> MCP[MCP Server / GCS Storage]
     end
     
-    Gate1 == "User Provides Date (YYYY-MM-DD)" ==> Router
+    Gate1 == "User Provides Date (e.g. August 20)" ==> Router
     Gate2 == "User Replies ('Yes' / 'No')" ==> Router
 
     classDef agentStyle fill:#1e3a8a,stroke:#3b82f6,color:#ffffff,stroke-width:2px;
 ```
+
+## Agent Architecture & Model Tiering
+
+The project demonstrates **Model Tiering** to balance reasoning performance, latency, and token cost:
+
+| Agent | Model | Role |
+| :--- | :--- | :--- |
+| **`router_agent`** | `gemini-2.5-flash` | Classifies user intent and routes conversational state |
+| **`trip_generator`** | `gemini-2.5-pro` | High-reasoning agent for itinerary planning & structured booking extraction |
+| **`booking_agent`** | `gemini-2.5-flash` | Executes Model Context Protocol (MCP) tools for GCS storage persistence |
 
 ## Conversational State Machine
 

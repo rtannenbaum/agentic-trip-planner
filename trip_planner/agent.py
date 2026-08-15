@@ -201,8 +201,8 @@ def input_router(node_input: str, ctx: Context):
         )
       elif any(kw in cleaned for kw in cancel_keywords):
         return Event(
-            state={"awaiting_input": None}, 
-            route="cancel"
+            state={"awaiting_input": None, "cancel_requested": True}, 
+            route="confirm"
         )
       else:
         return Event(
@@ -592,6 +592,16 @@ mcp_toolset = DynamicMcpToolset(
 async def get_booking_agent_instruction(ctx: Context) -> str:
   booking_requests_data = ctx.state.get("booking_requests_data", "")
   session_id = ctx.session.id
+  cancel_requested = ctx.state.get("cancel_requested", False)
+
+  if cancel_requested:
+    return (
+        "You are a booking coordinator agent.\n"
+        f"Session ID: '{session_id}'.\n"
+        "The traveler has explicitly requested to CANCEL their booking.\n"
+        "Politely confirm to the user that their booking request has been cancelled and no reservations were created."
+    )
+
   return (
       "You are a booking agent. You have access to booking tools.\n"
       f"Your task is to book the hotel and activities listed in the booking requests: {booking_requests_data}.\n"
@@ -602,24 +612,15 @@ async def get_booking_agent_instruction(ctx: Context) -> str:
       "and present a summary of the confirmed bookings to the user."
   )
 
-# 9. Booking Execution Agent (with MCP tools)
+# 9. Booking Execution Agent (with MCP tools for confirmation & cancellation)
 booking_agent = Agent(
     name="booking_agent",
     model=FLASH_MODEL,
-    description="Executes hotel and activity bookings using MCP tools.",
+    description="Executes or cancels hotel and activity bookings using MCP tools.",
     instruction=get_booking_agent_instruction,
     tools=[mcp_toolset, preload_memory],
     retry_config=rate_limit_retry_config,
 )
-
-# 9. Cancel Booking Node
-def cancel_booking():
-  """Returns a cancellation message when the user declines to book.
-
-  Returns:
-      A string indicating that the booking was cancelled.
-  """
-  return "Booking cancelled. No reservations were made."
 
 # Define the complete workflow
 root_agent = Workflow(
@@ -629,7 +630,6 @@ root_agent = Workflow(
         (input_router, {
             "plan_normally": router_agent,
             "confirm": booking_agent,
-            "cancel": cancel_booking,
             "keep_prompting": present_message,
             "resume_date_resolution": resolve_booking_dates
         }),
