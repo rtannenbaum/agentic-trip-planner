@@ -159,6 +159,18 @@ router_agent = Agent(
     output_key="router_output",
 )
 
+def try_parse_date(input_str: str) -> str | None:
+  """Parses flexible human date input into YYYY-MM-DD format."""
+  input_str = input_str.strip()
+  if not input_str:
+    return None
+  try:
+    from dateutil import parser
+    dt = parser.parse(input_str, fuzzy=True)
+    return dt.strftime("%Y-%m-%d")
+  except Exception:
+    return None
+
 # 1.5. Input Interceptor Node (to handle stateful interrupts)
 @node
 def input_router(node_input: str, ctx: Context):
@@ -178,13 +190,16 @@ def input_router(node_input: str, ctx: Context):
     
     if input_type == "booking_confirmation":
       cleaned = node_input.strip().lower()
-      if cleaned in ["yes", "y", "confirm", "go ahead"]:
+      confirm_keywords = {"yes", "y", "confirm", "go ahead", "book it", "sure", "sounds good", "please do", "absolutely", "yeah", "ok", "okay", "yep"}
+      cancel_keywords = {"no", "n", "cancel", "stop", "don't", "dont", "nevermind", "no thanks", "nah", "nope"}
+      
+      if any(kw in cleaned for kw in confirm_keywords):
         # Set booking requests data and clear awaiting input
         return Event(
             state={"booking_requests_data": original_data, "awaiting_input": None}, 
             route="confirm"
         )
-      elif cleaned in ["no", "n", "cancel", "stop"]:
+      elif any(kw in cleaned for kw in cancel_keywords):
         return Event(
             state={"awaiting_input": None}, 
             route="cancel"
@@ -194,13 +209,12 @@ def input_router(node_input: str, ctx: Context):
             output="Please reply with 'yes' to confirm the booking, or 'no' to cancel.",
             route="keep_prompting"
         )
-        
     elif input_type == "trip_start_date":
-      start_date = node_input.strip()
-      if re.match(r"^\d{4}-\d{2}-\d{2}$", start_date):
+      parsed = try_parse_date(node_input)
+      if parsed:
         return Event(
             state={
-                "trip_start_date": start_date,
+                "trip_start_date": parsed,
                 "booking_requests_data": original_data,
                 "awaiting_input": None
             },
@@ -208,56 +222,53 @@ def input_router(node_input: str, ctx: Context):
         )
       else:
         return Event(
-            output=(
-                f"The provided date `{start_date}` does not match the expected **YYYY-MM-DD** format.\n"
-                "Please provide the start date in **YYYY-MM-DD** format (e.g., `2026-08-20`)."
-            ),
+            output="I couldn't understand that date. Please share your planned start date (e.g., August 20, 2026).",
             route="keep_prompting"
         )
 
     elif input_type == "hotel_check_in":
-      val = node_input.strip()
-      if re.match(r"^\d{4}-\d{2}-\d{2}$", val):
+      parsed = try_parse_date(node_input)
+      if parsed:
         if "hotel" in original_data and original_data["hotel"]:
-          original_data["hotel"]["check_in"] = val
+          original_data["hotel"]["check_in"] = parsed
         return Event(
             state={"booking_requests_data": original_data, "awaiting_input": None},
             route="resume_date_resolution"
         )
       else:
         return Event(
-            output=f"Invalid format `{val}`. Please provide check-in date in **YYYY-MM-DD** format.",
+            output="I couldn't understand that check-in date. Please share your check-in date (e.g., August 20, 2026).",
             route="keep_prompting"
         )
 
     elif input_type == "hotel_check_out":
-      val = node_input.strip()
-      if re.match(r"^\d{4}-\d{2}-\d{2}$", val):
+      parsed = try_parse_date(node_input)
+      if parsed:
         if "hotel" in original_data and original_data["hotel"]:
-          original_data["hotel"]["check_out"] = val
+          original_data["hotel"]["check_out"] = parsed
         return Event(
             state={"booking_requests_data": original_data, "awaiting_input": None},
             route="resume_date_resolution"
         )
       else:
         return Event(
-            output=f"Invalid format `{val}`. Please provide check-out date in **YYYY-MM-DD** format.",
+            output="I couldn't understand that check-out date. Please share your check-out date (e.g., August 22, 2026).",
             route="keep_prompting"
         )
 
     elif input_type.startswith("activity_date_"):
       idx = awaiting_input.get("extra", {}).get("index")
-      val = node_input.strip()
-      if re.match(r"^\d{4}-\d{2}-\d{2}$", val) and idx is not None:
+      parsed = try_parse_date(node_input)
+      if parsed and idx is not None:
         if "activities" in original_data and len(original_data["activities"]) > idx:
-          original_data["activities"][idx]["date"] = val
+          original_data["activities"][idx]["date"] = parsed
         return Event(
             state={"booking_requests_data": original_data, "awaiting_input": None},
             route="resume_date_resolution"
         )
       else:
         return Event(
-            output=f"Invalid format `{val}`. Please use **YYYY-MM-DD**.",
+            output="I couldn't understand that activity date. Please share your activity date (e.g., August 20, 2026).",
             route="keep_prompting"
         )
 
