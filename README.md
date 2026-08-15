@@ -85,7 +85,7 @@ python main.py
 
 ```mermaid
 graph TD
-    User([User Prompt]) --> Router["🤖 Router Agent (Agent)"]:::agentStyle
+    User([User Prompt]) --> Router{Input Router}
     
     subgraph Planning & Date Resolution Phase
         Router -- "New Trip Request" --> TripGen["🤖 Trip Generator (Agent)"]:::agentStyle
@@ -111,11 +111,11 @@ graph TD
 
 The project demonstrates **Model Tiering** to balance reasoning performance, latency, and token cost:
 
-| Agent | Model | Role |
+| Component | Model / Engine | Role |
 | :--- | :--- | :--- |
-| **`router_agent`** | `gemini-2.5-flash` | Classifies user intent and routes conversational state |
-| **`trip_generator`** | `gemini-2.5-pro` | High-reasoning agent for itinerary planning & structured booking extraction |
-| **`booking_agent`** | `gemini-2.5-flash` | Executes Model Context Protocol (MCP) tools for GCS storage persistence |
+| **`input_router`** | State Machine & Heuristics | Intercepts conversational turns, parses flexible dates, and routes workflow |
+| **`trip_generator`** | `gemini-2.5-pro` | High-reasoning agent for creative itinerary planning & extraction |
+| **`booking_agent`** | `gemini-2.5-flash` | Fast, cost-effective agent executing MCP tools for GCS persistence & cancellation |
 
 ## Conversational State Machine
 
