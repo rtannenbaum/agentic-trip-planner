@@ -296,43 +296,50 @@ def execute_route(router_output: RouterOutput):
   return Event(state={"trip_details": router_output.query}, route="plan_trip")
 
 # 2. Trip Generator Agent
-class GeneratedTripResponse(BaseModel):
-  markdown_itinerary: str = Field(
-      ...,
-      description="The human-readable Markdown itinerary for the traveler."
-  )
-  booking_requests: BookingRequests = Field(
-      ...,
-      description="Structured hotel and activity booking items extracted from the itinerary."
-  )
-
-# 2. Trip Generator Agent (Single-pass generation & structured extraction)
 trip_generator = Agent(
     name="trip_generator",
     model=PRO_MODEL,
-    description="Generates trip itineraries and structured booking items.",
+    description="Generates trip itineraries.",
     instruction=(
         "You are an expert trip generator agent. Your job is to generate a trip itinerary "
         "based on the traveler's preferences (destination, duration, budget, interests). "
         "Traveler preferences: {trip_details}\n\n"
-        "Generate a detailed, human-readable Markdown itinerary in 'markdown_itinerary'. "
-        "Also extract the proposed hotel and all activities into 'booking_requests'. "
-        "If no hotel is proposed (e.g. day trip), set hotel to null. "
-        "If the calendar start date is unknown, extract dates as relative days (e.g. 'Day 1', 'Day 2')."
+        "Generate a detailed, human-readable Markdown itinerary for the traveler. "
+        "If the start date is unknown, use relative days (e.g. 'Day 1', 'Day 2')."
     ),
     tools=[preload_memory],
-    output_schema=GeneratedTripResponse,
-    output_key="generated_trip_response",
+    output_key="trip_plan",
     retry_config=rate_limit_retry_config,
 )
 
-# 3. Final Presentation & Processing Node
+# 3. Present Plan & Extract Bookings Node
 @node
-def process_trip_response(generated_trip_response: GeneratedTripResponse):
-  """Formats and outputs the trip plan while passing structured bookings to state."""
+def process_trip_response(trip_plan: str, ctx: Context):
+  """Formats markdown trip plan output and extracts structured bookings using Gemini Flash."""
+  from google import genai
+  from google.genai import types as genai_types
+  import json
+
+  client = genai.Client()
+  prompt = (
+      f"Analyze the trip plan below and extract the proposed hotel and activities into structured JSON.\n"
+      f"Trip Plan:\n{trip_plan}\n\n"
+      "If no hotel is proposed, set hotel to null. "
+      "If start date is unknown, keep dates as relative days (e.g. 'Day 1', 'Day 2')."
+  )
+  response = client.models.generate_content(
+      model=FLASH_MODEL,
+      contents=prompt,
+      config=genai_types.GenerateContentConfig(
+          response_mime_type="application/json",
+          response_schema=BookingRequests,
+      ),
+  )
+  booking_data = json.loads(response.text)
+
   return Event(
-      output=types.Content(parts=[types.Part(text=f"### Trip Plan\n\n{generated_trip_response.markdown_itinerary}")]),
-      state={"booking_requests_data": generated_trip_response.booking_requests.model_dump()}
+      output=types.Content(parts=[types.Part(text=f"### Trip Plan\n\n{trip_plan}")]),
+      state={"booking_requests_data": booking_data}
   )
 
 # Date Parsing Helper
