@@ -331,7 +331,7 @@ trip_generator = Agent(
 def process_trip_response(generated_trip_response: GeneratedTripResponse):
   """Formats and outputs the trip plan while passing structured bookings to state."""
   return Event(
-      output=f"### Trip Plan\n\n{generated_trip_response.markdown_itinerary}",
+      output=types.Content(parts=[types.Part(text=f"### Trip Plan\n\n{generated_trip_response.markdown_itinerary}")]),
       state={"booking_requests_data": generated_trip_response.booking_requests.model_dump()}
   )
 
