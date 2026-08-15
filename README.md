@@ -87,22 +87,24 @@ python main.py
 graph TD
     User([User Prompt]) --> Router{Input Router}
     
-    subgraph Planning & Date Resolution Phase
+    subgraph 1. Planning Phase
         Router -- "New Trip Request" --> TripGen["🤖 Trip Generator (Agent)"]:::agentStyle
-        TripGen --> DateGate{Start Date Set?}
-        
-        DateGate -- "No (Relative 'Day 1')" --> Gate1["HITL Gate 1: Request Start Date"]
-        DateGate -- "Yes (Calendar Dates Ready)" --> Gate2["HITL Gate 2: Request Booking Confirmation"]
     end
     
-    subgraph Execution & Lifecycle Phase
-        Router -- "User Confirms ('Yes') or Cancels ('No')" --> BookAgent["🤖 Booking Agent (Agent)"]:::agentStyle
-        
+    subgraph 2. HITL Phase
+        TripGen --> DateGate{Start Date Set?}
+        DateGate -- "No (Relative Days)" --> Gate1["HITL Gate 1: Start Date Prompt"]
+        DateGate -- "Yes (Dates Ready)" --> Gate2["HITL Gate 2: Confirmation Prompt"]
+    end
+    
+    subgraph 3. Execution & Lifecycle Phase
+        Router -- "Confirmation Flow ('Yes' / 'No')" --> BookAgent["🤖 Booking Agent (Agent)"]:::agentStyle
         BookAgent --> MCP[MCP Server / GCS Storage]
     end
     
-    Gate1 == "User Provides Date (e.g. August 20)" ==> Router
-    Gate2 == "User Replies ('Yes' / 'No')" ==> Router
+    Gate1 == "Requests User Input (Start Date)" ==> Router
+    Router -. "Resume Resolution (Bypasses Generator)" .-> DateGate
+    Gate2 == "Requests User Input (Confirmation)" ==> Router
 
     classDef agentStyle fill:#1e3a8a,stroke:#3b82f6,color:#ffffff,stroke-width:2px;
 ```
