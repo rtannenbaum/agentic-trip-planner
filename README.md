@@ -93,8 +93,8 @@ graph TD
     
     subgraph 2. HITL Phase
         TripGen --> DateGate{Start Date Set?}
-        DateGate -- "No (Relative Days)" --> Gate1["HITL Gate 1: Start Date Prompt"]
-        DateGate -- "Yes (Dates Ready)" --> Gate2["HITL Gate 2: Confirmation Prompt"]
+        DateGate -- "No" --> Gate1["HITL Gate 1: Start Date Prompt"]
+        DateGate -- "Yes" --> Gate2["HITL Gate 2: Confirmation Prompt"]
     end
     
     subgraph 3. Execution & Lifecycle Phase
