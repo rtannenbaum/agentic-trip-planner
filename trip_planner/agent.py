@@ -272,8 +272,8 @@ def input_router(node_input: str, ctx: Context):
             route="keep_prompting"
         )
 
-  # Default flow: pass input along to router_agent
-  return Event(output=node_input, route="plan_normally")
+  # Default flow: pass input directly to trip_generator as trip_details
+  return Event(state={"trip_details": node_input}, route="plan_trip")
 
 def present_message(node_input: str):
   """Node that returns a message to the user."""
@@ -282,18 +282,6 @@ def present_message(node_input: str):
 def suspend_workflow(node_input: str):
   """Terminal node that just returns the output to suspend execution."""
   return types.Content(parts=[types.Part(text=node_input)])
-
-def execute_route(router_output: RouterOutput):
-  """Routes the workflow to trip_generator with user trip_details.
-
-  Args:
-      router_output: The parsed RouterOutput from router_agent containing the
-        user query.
-
-  Returns:
-      An Event that updates the 'trip_details' state and routes to 'plan_trip'.
-  """
-  return Event(state={"trip_details": router_output.query}, route="plan_trip")
 
 # 2. Trip Generator Agent
 trip_generator = Agent(
@@ -635,14 +623,10 @@ root_agent = Workflow(
     edges=[
         ("START", input_router),
         (input_router, {
-            "plan_normally": router_agent,
+            "plan_trip": trip_generator,
             "confirm": booking_agent,
             "keep_prompting": present_message,
             "resume_date_resolution": resolve_booking_dates
-        }),
-        (router_agent, execute_route),
-        (execute_route, {
-            "plan_trip": trip_generator
         }),
         (trip_generator, process_trip_response, resolve_booking_dates),
         (resolve_booking_dates, {
