@@ -85,30 +85,25 @@ python main.py
 
 ```mermaid
 graph TD
-    START([User Input]) --> input_router{input_router Node}
-    input_router -- "plan_normally" --> router_agent[Router Agent]
-    input_router -- "confirm" --> booking_agent[booking_agent Node with MCP Tools]
-    input_router -- "cancel" --> cancel_booking[cancel_booking Node]
-    input_router -- "keep_prompting" --> present_message[present_message Node]
-    input_router -- "resume_date_resolution" --> resolve_booking_dates[resolve_booking_dates Node]
+    User([User Prompt]) --> Router{Input Router}
+    
+    subgraph Planning Phase
+        Router -- "New Trip Request" --> TripGen["🤖 Trip Generator (Agent)"]:::agentStyle
+        TripGen --> Extract["🤖 Booking Extractor (Agent)"]:::agentStyle
+        Extract --> DateGate[Date Resolution Gate]
+        DateGate --> Pause[Pause: Present Plan & Request Confirmation]
+    end
+    
+    subgraph Execution Phase
+        Router -- "User Confirms ('Yes')" --> BookAgent["🤖 Booking Agent (Agent)"]:::agentStyle
+        Router -- "User Cancels ('No')" --> Cancel[Cancel Handler]
+        
+        BookAgent --> MCP[MCP Server / GCS Storage]
+    end
+    
+    Pause == "User Replies ('Yes' / 'No')" ==> Router
 
-    router_agent --> execute_route[Execute Route]
-    execute_route -- "plan_trip" --> trip_generator[Generate Plan]
-    execute_route -- "query_bookings" --> booking_query_agent[booking_query_agent Node with MCP Tools]
-    
-    trip_generator --> present_plan[Present Plan]
-    present_plan --> booking_preparer[Extract Bookings]
-    booking_preparer --> serialize_bookings[serialize_bookings Node]
-    serialize_bookings --> resolve_booking_dates
-    
-    resolve_booking_dates -- "suspend" --> suspend_workflow[suspend_workflow Node]
-    suspend_workflow --> PAUSE[PAUSE: Wait for User Reply]
-    PAUSE -- Subsequent Turn --> START
-    present_message --> PAUSE
-    
-    booking_agent --> END([END])
-    cancel_booking --> END
-    booking_query_agent --> END
+    classDef agentStyle fill:#1e3a8a,stroke:#3b82f6,color:#ffffff,stroke-width:2px;
 ```
 
 ## Conversational State Machine

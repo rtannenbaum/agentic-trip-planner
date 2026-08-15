@@ -67,16 +67,15 @@ resource "google_project_service" "networkservices" {
   disable_on_destroy = false
 }
 
-
-# 2. Custom Service Account for the Reasoning Engine
-
-# Service Account (Dedicated running identity for the agent runtime container)
-resource "google_service_account" "agent_sa" {
-  account_id   = "reasoning-engine-test-sa"
-  display_name = "Service Account for Reasoning Engine Test"
-  project      = var.project_id
+# Network Security API (Enables Egress Gateway security policies)
+resource "google_project_service" "networksecurity" {
+  project            = var.project_id
+  service            = "networksecurity.googleapis.com"
+  disable_on_destroy = false
 }
 
+
+# 2. Custom Service Account for the Reasoning Engine
 
 # 3. IAM Bindings for Tracing, Logging, Monitoring, and Vertex AI Execution
 
@@ -84,35 +83,42 @@ resource "google_service_account" "agent_sa" {
 resource "google_storage_bucket_iam_member" "bucket_viewer" {
   bucket = google_storage_bucket.agent_bucket.name
   role   = "roles/storage.objectAdmin"
-  member = "serviceAccount:${google_service_account.agent_sa.email}"
+  member = "serviceAccount:reasoning-engine-test-sa@${var.project_id}.iam.gserviceaccount.com"
 }
 
 # Logging Log Writer (Allows exporting runtime and diagnostic logs)
 resource "google_project_iam_member" "log_writer" {
   project = var.project_id
   role    = "roles/logging.logWriter"
-  member  = "serviceAccount:${google_service_account.agent_sa.email}"
+  member  = "serviceAccount:reasoning-engine-test-sa@${var.project_id}.iam.gserviceaccount.com"
 }
 
 # Vertex AI User (Allows evaluations and execution of core ML actions)
 resource "google_project_iam_member" "aiplatform_user" {
   project = var.project_id
   role    = "roles/aiplatform.user"
-  member  = "serviceAccount:${google_service_account.agent_sa.email}"
+  member  = "serviceAccount:reasoning-engine-test-sa@${var.project_id}.iam.gserviceaccount.com"
 }
 
 # Cloud Trace Agent (Allows writing trace spans)
 resource "google_project_iam_member" "trace_agent" {
   project = var.project_id
   role    = "roles/cloudtrace.agent"
-  member  = "serviceAccount:${google_service_account.agent_sa.email}"
+  member  = "serviceAccount:reasoning-engine-test-sa@${var.project_id}.iam.gserviceaccount.com"
 }
 
 # Monitoring Metric Writer (Allows writing evaluation/system metrics)
 resource "google_project_iam_member" "monitoring_writer" {
   project = var.project_id
   role    = "roles/monitoring.metricWriter"
-  member  = "serviceAccount:${google_service_account.agent_sa.email}"
+  member  = "serviceAccount:reasoning-engine-test-sa@${var.project_id}.iam.gserviceaccount.com"
+}
+
+# Service Usage Consumer (Allows consuming GCP APIs & GCS client quota)
+resource "google_project_iam_member" "service_usage_consumer" {
+  project = var.project_id
+  role    = "roles/serviceusage.serviceUsageConsumer"
+  member  = "serviceAccount:reasoning-engine-test-sa@${var.project_id}.iam.gserviceaccount.com"
 }
 
 
@@ -132,12 +138,12 @@ resource "google_secret_manager_secret" "api_key_secret" {
 }
 
 # Secret Accessor - Service Account (Allows reading the API key inside the agent)
-resource "google_secret_manager_secret_iam_member" "sa_secret_accessor" {
+resource "google_secret_manager_secret_iam_member" "sa_secret_accessor_v2" {
   provider  = google-beta
   project   = var.project_id
   secret_id = google_secret_manager_secret.api_key_secret.secret_id
   role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${google_service_account.agent_sa.email}"
+  member    = "serviceAccount:reasoning-engine-test-sa@${var.project_id}.iam.gserviceaccount.com"
 }
 
 # Service Agent Identity (Retrieves Vertex AI system identity for deployment)
@@ -218,8 +224,6 @@ resource "google_vertex_ai_reasoning_engine" "test_engine" {
 
   spec {
     agent_framework = "google-adk"
-    service_account = google_service_account.agent_sa.email
-    agent_gateway   = google_network_services_agent_gateway.egress_gateway.id
 
 
     class_methods = jsonencode([
@@ -390,6 +394,11 @@ resource "google_vertex_ai_reasoning_engine" "test_engine" {
         value = "/code/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
       }
       env {
+        name  = "NUM_WORKERS"
+        value = "1"
+      }
+      
+      env {
         name  = "GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY"
         value = "true"
       }
@@ -413,6 +422,14 @@ resource "google_vertex_ai_reasoning_engine" "test_engine" {
         name  = "OTEL_RESOURCE_ATTRIBUTES"
         value = var.reasoning_engine_id != "" ? "service.name=${var.display_name},gcp.resource_type=vertex_ai_reasoning_engine,gcp.resource.id=projects/${var.project_id}/locations/${var.location}/reasoningEngines/${var.reasoning_engine_id}" : (var.agent_registry_id != "" ? "service.name=${var.display_name},agent.id=${var.agent_registry_id}" : "service.name=${var.display_name}")
       }
+      env {
+        name  = "NO_PROXY"
+        value = "127.0.0.1,localhost,metadata.google.internal,169.254.169.254,googleapis.com,.googleapis.com"
+      }
+      env {
+        name  = "no_proxy"
+        value = "127.0.0.1,localhost,metadata.google.internal,169.254.169.254,googleapis.com,.googleapis.com"
+      }
       secret_env {
         name = "GEMINI_API_KEY"
 
@@ -421,6 +438,12 @@ resource "google_vertex_ai_reasoning_engine" "test_engine" {
           version = "latest"
         }
       }
+
+#      agent_gateway_config {
+#        agent_to_anywhere_config {
+#          agent_gateway = google_network_services_agent_gateway.egress_gateway.id
+#        }
+#      }
     }
 
     package_spec {
@@ -429,6 +452,8 @@ resource "google_vertex_ai_reasoning_engine" "test_engine" {
       dependency_files_gcs_uri = "gs://${google_storage_bucket.agent_bucket.name}/${google_storage_bucket_object.dependencies.name}"
       python_version           = var.python_version
     }
+
+    service_account = "reasoning-engine-test-sa@tripplanner-dev-sandbox-456240.iam.gserviceaccount.com"
   }
 
   depends_on = [
@@ -437,14 +462,13 @@ resource "google_vertex_ai_reasoning_engine" "test_engine" {
     google_project_service.agentregistry,
     google_project_service.logging,
     google_project_service.telemetry,
-    google_storage_bucket_iam_member.bucket_viewer,
-    google_project_iam_member.log_writer,
-    google_project_iam_member.trace_agent,
-    google_project_iam_member.monitoring_writer,
-    google_project_iam_member.aiplatform_user,
-    google_secret_manager_secret_iam_member.sa_secret_accessor,
+    google_project_service.networkservices,
+    google_project_service.networksecurity,
+    google_project_service.modelarmor,
     google_secret_manager_secret_iam_member.service_agent_secret_accessor,
-    google_secret_manager_secret_iam_member.re_service_agent_secret_accessor
+    google_secret_manager_secret_iam_member.re_service_agent_secret_accessor,
+    google_secret_manager_secret_iam_member.sa_secret_accessor_v2,
+    google_project_iam_member.service_usage_consumer
   ]
 }
 
@@ -472,6 +496,8 @@ resource "google_model_armor_template" "agent_pii_filter" {
     log_template_operations            = true
     enforcement_type                   = "INSPECT_AND_BLOCK"
   }
+
+  depends_on = [google_project_service.modelarmor]
 }
 
 # Egress Gateway (Governs and routes outbound tool calls)
@@ -484,6 +510,8 @@ resource "google_network_services_agent_gateway" "egress_gateway" {
   google_managed {
     governed_access_path = "AGENT_TO_ANYWHERE"
   }
+
+  depends_on = [google_project_service.networkservices]
 }
 
 # Authz Extension (Calls Model Armor service on egress proxy events)
@@ -505,6 +533,11 @@ resource "google_network_services_authz_extension" "egress_filter_ext" {
       }
     ])
   }
+
+  depends_on = [
+    google_project_service.networkservices,
+    google_model_armor_template.agent_pii_filter
+  ]
 }
 
 # Authz Policy (Hooks egress gateway events to filter extension)
@@ -526,4 +559,6 @@ resource "google_network_security_authz_policy" "egress_security_policy" {
       resources = [google_network_services_authz_extension.egress_filter_ext.id]
     }
   }
+
+  depends_on = [google_project_service.networksecurity]
 }

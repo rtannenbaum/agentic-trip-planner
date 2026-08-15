@@ -56,7 +56,6 @@ compaction_config = EventsCompactionConfig(
 
 app = DynamicAdkApp(
     agent=root_agent,
-    enable_tracing=True,
     events_compaction_config=compaction_config,
     plugins=[StructuredLoggingPlugin()]
 )
@@ -66,7 +65,7 @@ echo "   -> Saved agent_engine.pkl"
 
 # 3. Create the dependencies archive (tar.gz) of trip_planner/
 echo "2. Packaging trip_planner/ directory..."
-tar -czf "${TERRAFORM_FILES_DIR}/dependencies.tar.gz" -C "${PROJECT_ROOT}" trip_planner
+tar --exclude='__pycache__' --exclude='*.pyc' --exclude='.adk' --exclude='*.db' -czf "${TERRAFORM_FILES_DIR}/dependencies.tar.gz" -C "${PROJECT_ROOT}" trip_planner
 echo "   -> Saved dependencies.tar.gz"
 
 echo "=== Build Complete! Ready for 'terraform apply' ==="

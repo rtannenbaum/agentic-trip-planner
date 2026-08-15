@@ -108,12 +108,7 @@ class LoggingPreloadMemoryTool(PreloadMemoryTool):
 
 preload_memory = LoggingPreloadMemoryTool()
 
-# 1. Router Schema and Agent
 class RouterOutput(BaseModel):
-  route: Literal["plan_trip", "query_bookings"] = Field(
-      ...,
-      description="The route to take. 'plan_trip' to plan a new trip or modify a plan. 'query_bookings' to view bookings, show summaries of booked days, or check booking status."
-  )
   query: str = Field(..., description="Copy the user's input query here verbatim.")
 
 # Schemas for Structured Booking Extraction
@@ -156,14 +151,9 @@ PRO_MODEL = os.environ.get("PRO_MODEL", "gemini-2.5-pro")
 router_agent = Agent(
     name="router_agent",
     model=FLASH_MODEL,
-    description="Routes user input to the correct flow.",
+    description="Captures user trip planning input.",
     instruction=(
-        "Analyze the user's input and determine if they want to plan a new trip, "
-        "or if they are asking about existing/past bookings and itineraries.\n"
-        "Select 'plan_trip' if they want to plan a new trip (e.g. destinations, dates, preferences).\n"
-        "Select 'query_bookings' if they are asking to see their bookings, "
-        "show summaries of booked days (e.g. 'show day 2'), list booked activities, or check booking status.\n\n"
-        "You must also copy the user's input query verbatim into the 'query' field."
+        "Copy the user's input query verbatim into the 'query' field."
     ),
     output_schema=RouterOutput,
     output_key="router_output",
@@ -283,20 +273,16 @@ def suspend_workflow(node_input: str):
   return types.Content(parts=[types.Part(text=node_input)])
 
 def execute_route(router_output: RouterOutput):
-  """Routes the workflow based on the classified user intent.
+  """Routes the workflow to trip_generator with user trip_details.
 
   Args:
       router_output: The parsed RouterOutput from router_agent containing the
-        classified route and the original user query.
+        user query.
 
   Returns:
-      An Event that updates the 'trip_details' state and routes to 'plan_trip'
-      if planning a new trip, or routes to 'query_bookings' if querying
-      existing bookings.
+      An Event that updates the 'trip_details' state and routes to 'plan_trip'.
   """
-  if router_output.route == "plan_trip":
-    return Event(state={"trip_details": router_output.query}, route="plan_trip")
-  return Event(route="query_bookings")
+  return Event(state={"trip_details": router_output.query}, route="plan_trip")
 
 # 2. Trip Generator Agent
 trip_generator = Agent(
@@ -538,6 +524,7 @@ def resolve_booking_dates(booking_requests_data: dict | Any, ctx: Context):
 def get_mcp_env() -> dict[str, str]:
   mcp_env = {
       "BUCKET_NAME": os.environ.get("BUCKET_NAME", ""),
+      "PYTHONPATH": os.environ.get("PYTHONPATH", os.path.pathsep.join(sys.path)),
   }
   # Forward telemetry & credentials variables for distributed tracing
   prefixes_to_forward = ("OTEL_", "TRACE", "GOOGLE_CLOUD_")
@@ -550,22 +537,31 @@ class DynamicMcpToolset(McpToolset):
   def __setstate__(self, state):
     super().__setstate__(state)
     import inspect
+    import os
     import sys
     from google.adk.tools.mcp_tool.mcp_session_manager import MCPSessionManager, StdioConnectionParams, StdioServerParameters
     
+    agent_dir = os.path.dirname(os.path.abspath(__file__))
+    mcp_server_path = os.path.join(agent_dir, "mcp_server.py")
+    if not os.path.exists(mcp_server_path):
+      mcp_server_path = "trip_planner/mcp_server.py"
+
+    cmd = sys.executable or "python3"
+
+    mcp_env = get_mcp_env()
     if hasattr(self, '_connection_params'):
       params = self._connection_params
       if isinstance(params, StdioConnectionParams):
         params.server_params = StdioServerParameters(
-            command=sys.executable,
-            args=params.server_params.args,
-            env=params.server_params.env
+            command=cmd,
+            args=[mcp_server_path],
+            env=mcp_env
         )
       elif isinstance(params, StdioServerParameters):
         self._connection_params = StdioServerParameters(
-            command=sys.executable,
-            args=params.args,
-            env=params.env
+            command=cmd,
+            args=[mcp_server_path],
+            env=mcp_env
         )
       
       init_params = inspect.signature(MCPSessionManager.__init__).parameters
@@ -579,10 +575,12 @@ class DynamicMcpToolset(McpToolset):
       filtered_kwargs = {k: v for k, v in kwargs.items() if k in init_params}
       self._mcp_session_manager = MCPSessionManager(**filtered_kwargs)
 
-# Configure the MCP server connection
+# Configure the MCP server connection using relative path for container portability
+_MCP_SERVER_PATH = "trip_planner/mcp_server.py"
+
 server_params = StdioServerParameters(
-    command=sys.executable,
-    args=['trip_planner/mcp_server.py'],
+    command="python3",
+    args=[_MCP_SERVER_PATH],
     env=get_mcp_env()
 )
 mcp_toolset = DynamicMcpToolset(
@@ -623,23 +621,6 @@ def cancel_booking():
   """
   return "Booking cancelled. No reservations were made."
 
-async def get_booking_query_agent_instruction(ctx: Context) -> str:
-  session_id = ctx.session.id
-  return (
-      "You are a helpful assistant. Your job is to answer questions about the traveler's bookings. "
-      f"Use the `list_bookings` tool (passing session_id='{session_id}') to retrieve the current bookings and present them to the user. "
-      "If no bookings are found, let the user know."
-  )
-
-# 10. Booking Query Agent (to list bookings)
-booking_query_agent = Agent(
-    name="booking_query_agent",
-    model=FLASH_MODEL,
-    description="Answers questions about bookings.",
-    instruction=get_booking_query_agent_instruction,
-    tools=[mcp_toolset],
-)
-
 # Define the complete workflow
 root_agent = Workflow(
     name="trip_planner_workflow",
@@ -654,8 +635,7 @@ root_agent = Workflow(
         }),
         (router_agent, execute_route),
         (execute_route, {
-            "plan_trip": trip_generator,
-            "query_bookings": booking_query_agent
+            "plan_trip": trip_generator
         }),
         (trip_generator, present_plan, booking_preparer, serialize_bookings, resolve_booking_dates),
         (resolve_booking_dates, {
@@ -674,7 +654,34 @@ class DynamicAdkApp(AdkApp):
     super().__init__(agent=agent, **kwargs)
     self._tmpl_attrs["events_compaction_config"] = events_compaction_config
 
+  def project_id(self) -> str:
+    """Override project_id to avoid calling Resource Manager API which fails during setup."""
+    return self._tmpl_attrs.get("project") or os.environ.get("GOOGLE_CLOUD_PROJECT", "tripplanner-dev-sandbox-456240")
+
   def set_up(self):
+    # Dynamically patch google.auth.default to restrict credentials scopes.
+    # This prevents the container from trying to refresh tokens with local-developer Workspace scopes
+    # (Gmail, Calendar, Drive, YouTube) which are not supported by the VM metadata server.
+    import google.auth
+    
+    original_default = google.auth.default
+    
+    def patched_default(*args, **kwargs):
+      # Restrict scopes to cloud-platform only.
+      kwargs["scopes"] = ["https://www.googleapis.com/auth/cloud-platform"]
+      if "default_scopes" in kwargs:
+        kwargs["default_scopes"] = ["https://www.googleapis.com/auth/cloud-platform"]
+      return original_default(*args, **kwargs)
+      
+    google.auth.default = patched_default
+
+    # Dynamically update server_params command to current container sys.executable
+    server_params.command = sys.executable
+
+    # Ensure GOOGLE_CLOUD_AGENT_ENGINE_ID is set so VertexAiMemoryBankService is initialized
+    if "GOOGLE_CLOUD_AGENT_ENGINE_ID" not in os.environ:
+      os.environ["GOOGLE_CLOUD_AGENT_ENGINE_ID"] = "8809438344590131200"
+
     # Call base setup to populate services and config environment variables
     super().set_up()
     
