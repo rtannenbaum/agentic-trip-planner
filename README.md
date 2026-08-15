@@ -88,9 +88,8 @@ graph TD
     User([User Prompt]) --> Router{Input Router}
     
     subgraph Planning Phase
-        Router -- "New Trip Request" --> TripGen["🤖 Trip Generator (Agent)"]:::agentStyle
-        TripGen --> Extract["🤖 Booking Extractor (Agent)"]:::agentStyle
-        Extract --> DateGate[Date Resolution Gate]
+        Router -- "New Trip Request" --> TripGen["🤖 Single-Pass Trip Generator (Agent)"]:::agentStyle
+        TripGen --> DateGate[Date Resolution Gate]
         DateGate --> Pause[Pause: Present Plan & Request Confirmation]
     end
     

@@ -285,48 +285,44 @@ def execute_route(router_output: RouterOutput):
   return Event(state={"trip_details": router_output.query}, route="plan_trip")
 
 # 2. Trip Generator Agent
+class GeneratedTripResponse(BaseModel):
+  markdown_itinerary: str = Field(
+      ...,
+      description="The human-readable Markdown itinerary for the traveler."
+  )
+  booking_requests: BookingRequests = Field(
+      ...,
+      description="Structured hotel and activity booking items extracted from the itinerary."
+  )
+
+# 2. Trip Generator Agent (Single-pass generation & structured extraction)
 trip_generator = Agent(
     name="trip_generator",
     model=PRO_MODEL,
-    description="Generates trip itineraries.",
+    description="Generates trip itineraries and structured booking items.",
     instruction=(
         "You are an expert trip generator agent. Your job is to generate a trip itinerary "
         "based on the traveler's preferences (destination, duration, budget, interests). "
         "Traveler preferences: {trip_details}\n\n"
-        "Please provide minimal details for the itinerary: just the name and a one-line description for each activity."
+        "Generate a detailed, human-readable Markdown itinerary in 'markdown_itinerary'. "
+        "Also extract the proposed hotel and all activities into 'booking_requests'. "
+        "If no hotel is proposed (e.g. day trip), set hotel to null. "
+        "If the calendar start date is unknown, extract dates as relative days (e.g. 'Day 1', 'Day 2')."
     ),
     tools=[preload_memory],
-    output_key="trip_plan",
+    output_schema=GeneratedTripResponse,
+    output_key="generated_trip_response",
     retry_config=rate_limit_retry_config,
 )
 
-# 3. Final Presentation Node
-def present_plan(trip_plan: str):
-  """Formats and wraps the generated trip plan in a user-facing markdown header.
-
-  Args:
-      trip_plan: The raw text representation of the generated itinerary.
-
-  Returns:
-      A formatted markdown string presenting the trip plan.
-  """
-  return f"### Trip Plan\n\n{trip_plan}"
-
-# 6. Booking Preparer Agent
-booking_preparer = Agent(
-    name="booking_preparer",
-    model=FLASH_MODEL,
-    description="Extracts hotels and activities for booking into a structured format.",
-    instruction=(
-        "You are a booking coordinator. Analyze the final trip plan: {trip_plan}\n"
-        "Extract the proposed hotel and all activities.\n"
-        "If no hotel is proposed in the itinerary (e.g. for a day trip or if the traveler is staying elsewhere), set the 'hotel' field to null.\n"
-        "If the start date is unknown, extract dates as relative days (e.g., 'Day 1' for the first day, 'Day 2' for the second day).\n"
-        "Otherwise, output dates in 'YYYY-MM-DD' format."
-    ),
-    output_schema=BookingRequests,
-    output_key="booking_requests_data",
-)
+# 3. Final Presentation & Processing Node
+@node
+def process_trip_response(generated_trip_response: GeneratedTripResponse):
+  """Formats and outputs the trip plan while passing structured bookings to state."""
+  return Event(
+      output=f"### Trip Plan\n\n{generated_trip_response.markdown_itinerary}",
+      state={"booking_requests_data": generated_trip_response.booking_requests.model_dump()}
+  )
 
 # Date Parsing Helper
 def parse_relative_date(relative_str: str, start_date_str: str) -> str:
@@ -350,12 +346,6 @@ def parse_relative_date(relative_str: str, start_date_str: str) -> str:
       )
 
   return relative_str
-
-# 7. Serialize Bookings Node
-@node
-def serialize_bookings(booking_requests_data: BookingRequests):
-  """Converts Pydantic BookingRequests to dict to avoid serialization issues."""
-  return Event(state={"booking_requests_data": booking_requests_data.model_dump()})
 
 # 8. Date Resolution Node (State-Machine)
 @node
@@ -637,7 +627,7 @@ root_agent = Workflow(
         (execute_route, {
             "plan_trip": trip_generator
         }),
-        (trip_generator, present_plan, booking_preparer, serialize_bookings, resolve_booking_dates),
+        (trip_generator, process_trip_response, resolve_booking_dates),
         (resolve_booking_dates, {
             "suspend": suspend_workflow
         })
